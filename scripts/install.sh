@@ -25,12 +25,34 @@ home=${HERDR_APP_HOME:-$HOME/.config/herdr-app}
 dest=$home/mods/reviewer
 [ -f "$src/mod.json" ] || { echo "no mod at $src" >&2; exit 1; }
 command -v herdr-app >/dev/null || { echo "herdr-app is not on PATH" >&2; exit 1; }
+mkdir -p "$home/mods"
+stage=$home/.reviewer-install
+mkdir "$stage" || { echo "another Reviewer install may be in progress ($stage)" >&2; exit 1; }
+cleanup_install() {
+  if [ -d "$stage/previous" ] && [ ! -e "$dest" ]; then
+    if ! mv "$stage/previous" "$dest"; then
+      echo "could not restore the previous Reviewer; the backup is at $stage/previous" >&2
+      return 1
+    fi
+  fi
+  rm -rf "$stage"
+}
+trap cleanup_install 0
+trap 'exit 1' HUP INT TERM
+
 if [ -L "$dest" ]; then echo "$dest is a symlink; remove it first (Herdr never reloads a linked mod)" >&2; exit 1; fi
-herdr-app check "$src" || exit 1
-mkdir -p "$dest"
-# Drop everything but the two files Herdr writes there itself, then copy.
-find "$dest" -mindepth 1 -maxdepth 1 ! -name jsconfig.json ! -name gpui-kit.d.ts -exec rm -rf {} +
-cp -R "$src/." "$dest/"
+mkdir "$stage/reviewer"
+cp -R "$src/." "$stage/reviewer/"
+for generated in jsconfig.json gpui-kit.d.ts; do
+  if [ -f "$dest/$generated" ]; then
+    cp -p "$dest/$generated" "$stage/reviewer/$generated"
+  fi
+done
+herdr-app check "$stage/reviewer" || exit 1
+if [ -d "$dest" ]; then
+  mv "$dest" "$stage/previous"
+fi
+mv "$stage/reviewer" "$dest"
 version=$(sed -n 's/.*"version": *"\([^"]*\)".*/\1/p' "$dest/mod.json" | head -n 1)
 echo "reviewer ${version:-?} installed in $dest"
 
@@ -90,20 +112,22 @@ if ! uses "$file" changes; then
   echo "layout $shown has no \`changes\` block to swap. Add a block with \"mod\": \"reviewer\" where you want it."
   exit 0
 fi
-if ! grep -q '"cloned_from"' "$file"; then
-  # Herdr's own layout: clone it (the clone keeps its look and clicks) and edit the clone.
-  clone=$shown-reviewer
-  if [ -f "$home/layouts/$clone.json" ]; then
-    echo "layout $clone already exists; switch to it with: herdr-app do layout.switch '{\"name\":\"$clone\"}'"
-    exit 0
-  fi
-  herdr-app do layout.clone "{\"name\":\"$shown\",\"as\":\"$clone\"}" >/dev/null
-  file=$home/layouts/$clone.json
-  i=0
-  while [ ! -f "$file" ] && [ $i -lt 50 ]; do sleep 0.1; i=$((i + 1)); done
-  [ -f "$file" ] || { echo "Herdr didn't write $file. $manual" >&2; exit 1; }
-  shown=$clone
-fi
+case "$shown" in
+  main|terminals|win98)
+    # Herdr's own layout: clone it (the clone keeps its look and clicks) and edit the clone.
+    clone=$shown-reviewer
+    if [ -f "$home/layouts/$clone.json" ]; then
+      echo "layout $clone already exists; switch to it with: herdr-app do layout.switch '{\"name\":\"$clone\"}'"
+      exit 0
+    fi
+    herdr-app do layout.clone "{\"name\":\"$shown\",\"as\":\"$clone\"}" >/dev/null
+    file=$home/layouts/$clone.json
+    i=0
+    while [ ! -f "$file" ] && [ $i -lt 50 ]; do sleep 0.1; i=$((i + 1)); done
+    [ -f "$file" ] || { echo "Herdr didn't write $file. $manual" >&2; exit 1; }
+    shown=$clone
+    ;;
+esac
 tmp=$file.reviewer-tmp
 sed 's/"mod": *"changes"/"mod": "reviewer"/' "$file" > "$tmp" && mv "$tmp" "$file"
 echo "layout $shown: the Changes panel now shows reviewer (the Changes button in the tab bar opens it)"

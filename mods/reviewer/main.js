@@ -65,7 +65,7 @@ const DIFF_LINES = 1500, FILE_LINES = 30000, FILE_BYTES = 2_000_000, SHORT_GAP =
 // uses): never take index.lock, which an agent's commit may need at the same
 // moment; never start a repo's fsmonitor just because it got focus; never
 // rewrite the index from git diff. Clicked actions such as commit run as is.
-const READ = ["--no-optional-locks", "-c", "core.fsmonitor=false", "-c", "diff.autoRefreshIndex=false"];
+const READ = ["--no-optional-locks", "--literal-pathspecs", "-c", "core.fsmonitor=false", "-c", "diff.autoRefreshIndex=false"];
 // The code font: the terminal's (`font` in settings, JetBrains Mono when
 // unset), one size smaller than the terminal (`font_size`, 14 when unset);
 // `props.font_size` overrides. Rows and widths scale with it.
@@ -136,7 +136,7 @@ export default class Changes extends View {
     // Opened as the send dialog (ask.js): this copy is the dialog, nothing else.
     if (props()?.dialog) { this.dialog = Object.create(Dialog.prototype); this.dialog.init(_props, cx); return; }
     this.files = []; this.rows = []; this.index = new Map(); this.items = []; this.sizes = []; this.diffWidth = 0; this.gutter = 30; this.message = "";
-    this.comments = []; this.composer = null; this.handle = cx.focus_handle(); this.scroll = VirtualListScrollHandle.new();
+    this.comments = []; this.submission = null; this.composer = null; this.handle = cx.focus_handle(); this.scroll = VirtualListScrollHandle.new();
     this.fontSize = codeSize(); this.row = rowOf(this.fontSize); this.unfolded = new Set();
     this.scope = "work"; this.sha = null; this.scopeInfo = null; this.choosingScope = false; this.range = ["HEAD"]; this.log = null;
     this.input = InputState.new({ placeholder: "Commit message" });
@@ -167,6 +167,10 @@ export default class Changes extends View {
         cx.notify();
       }
     });
+  }
+
+  async close() {
+    this.dialog?.onRemoved();
   }
 
   watch(root, cx) {
@@ -201,7 +205,7 @@ export default class Changes extends View {
     if (context !== this.context) {
       this.folderWatch?.cancel();
       this.folderWatch = null;
-      this.context = context; this.root = null; this.log = null; this.files = []; this.open = null; this.comments = []; this.composer = null;
+      this.context = context; this.root = null; this.log = null; this.choosingScope = false; this.files = []; this.open = null; this.comments = []; this.composer = null;
       this.setLines([]); this.message = ""; this.input.set_value(""); this.error = null; this.note_ = null; this.watched = null; this.closed = false; this.limited = false;
     }
     if (!cwd) return;
@@ -236,15 +240,15 @@ export default class Changes extends View {
         // What is diffed: the working tree against one ref, or a picked commit against its parent.
         const range = scope === "commit" ? [info.commit.parent, info.commit.sha] : [scope === "branch" ? info.merge : scope === "last" ? `${info.last}~1` : "HEAD"];
         // Files: what differs in the range, plus (for the working tree) untracked files and conflicts from the status.
-        const stats = {}, changed = new Map();
+        const stats = new Map(), changed = new Map();
         const results = hasHead ? [await git(["diff", ...range, "--numstat", "-z", "--no-renames"])] : [await git(["diff", "--cached", "--numstat", "-z", "--no-renames"]), await git(["diff", "--numstat", "-z", "--no-renames"])];
         for (const result of results) {
           if (result.code !== 0) throw new Error(result.stderr);
           for (const entry of result.stdout.split("\0")) {
             const [a, d, ...parts] = entry.split("\t");
             if (!parts.length) continue;
-            const path = parts.join("\t"), old = stats[path] ?? { add: 0, del: 0 };
-            stats[path] = { add: old.add + (Number(a) || 0), del: old.del + (Number(d) || 0), binary: a === "-" };
+            const path = parts.join("\t"), old = stats.get(path) ?? { add: 0, del: 0 };
+            stats.set(path, { add: old.add + (Number(a) || 0), del: old.del + (Number(d) || 0), binary: old.binary || a === "-" });
           }
         }
         if (hasHead) {
@@ -254,7 +258,7 @@ export default class Changes extends View {
           // With diff.autoRefreshIndex off, a file whose stat changed but whose
           // content did not (touched, rewritten unchanged) is listed as M here
           // with no numstat line, until something else refreshes the index.
-          for (let i = 0; i + 1 < parts.length && parts[i]; i += 2) { if (parts[i][0] !== "M" || stats[parts[i + 1]]) changed.set(parts[i + 1], parts[i][0]); }
+          for (let i = 0; i + 1 < parts.length && parts[i]; i += 2) { if (parts[i][0] !== "M" || stats.has(parts[i + 1])) changed.set(parts[i + 1], parts[i][0]); }
         }
         // A picked commit is history: the working tree's state is not part of it.
         const entries = scope === "commit" ? [] : status.stdout.split("\0").filter(Boolean);
@@ -267,7 +271,7 @@ export default class Changes extends View {
         const files = [];
         for (const [path, s0] of [...changed.entries()].sort((a, b) => a[0].localeCompare(b[0])).slice(0, 1000)) {
           const fresh = s0 === "?", s = fresh ? "A" : s0 === "D" || s0 === "A" || s0 === "U" ? s0 : "M";
-          const stat = stats[path] ?? { add: 0, del: 0 };
+          const stat = stats.get(path) ?? { add: 0, del: 0 };
           files.push({ path, status: s, fresh, ...stat });
         }
         if (key() !== context) return;
@@ -297,7 +301,13 @@ export default class Changes extends View {
           catch { if (key() === context) this.setLines(["Cannot preview this diff (too large or unreadable)"]); }
         }
       } catch (e) { if (key() === context) this.error = String(e); }
-      finally { this.loading = false; cx.notify(); }
+      finally {
+        this.loading = false;
+        const choice = this.queuedScope;
+        this.queuedScope = null;
+        if (choice?.context === key() && choice.root === this.root) this.setScope(choice.scope, cx, choice.sha);
+        cx.notify();
+      }
     });
   }
 
@@ -352,7 +362,7 @@ export default class Changes extends View {
       if (found) {
         const [full, short, title] = found.split("\x1f");
         // A root commit is diffed against the empty tree.
-        const parent = (await out(["rev-parse", "--verify", "-q", `${full}~1`])) ?? (await out(["hash-object", "-t", "tree", "/dev/null"]));
+        const parent = (await out(["rev-parse", "--verify", "-q", `${full}~1`])) ?? (await out(["hash-object", "-t", "tree", "--stdin"]));
         if (parent) commit = { sha: full, short, subject: title, parent };
       }
     }
@@ -374,7 +384,18 @@ export default class Changes extends View {
   // `sha`: the commit, for the "commit" scope.
   setScope(scope, cx, sha = null) {
     const id = this.scopeId(scope, sha);
-    if (!this.root || id === this.scopeId()) { this.choosingScope = false; cx.notify(); return; }
+    if (!this.root || id === this.scopeId()) {
+      this.queuedScope = null;
+      this.choosingScope = false;
+      cx.notify();
+      return;
+    }
+    if (this.loading) {
+      this.queuedScope = { scope, sha, context: this.context, root: this.root };
+      this.choosingScope = false;
+      cx.notify();
+      return;
+    }
     const all = { ...(shared(SCOPE) ?? {}) }; all[`${this.on ?? ""}:${this.root}`] = id; setShared(SCOPE, all);
     this.scope = scope; this.sha = sha; this.choosingScope = false; this.composer = null; this.setLines([]);
     this.comments = this.loadDrafts(id); this.rebuild();
@@ -392,9 +413,14 @@ export default class Changes extends View {
     const root = this.root, on = this.on, context = this.context, merge = this.scopeInfo?.merge;
     if (!root || !this.hasHead) return;
     cx.spawn(async (cx) => {
-      const r = await exec("git", [...READ, "log", "--first-parent", `-n${LOG_SIZE}`, "--format=%H%x1f%h%x1f%s%x1f%ar%x1f%an", ...(merge ? [`${merge}..HEAD`] : []), "--"], { cwd: root, on });
-      if (key() !== context || root !== this.root) return;
-      this.log = r.code !== 0 ? [] : r.stdout.split("\n").filter(Boolean).map((l) => { const [sha, short, subject, when, author] = l.split("\x1f"); return { sha, short, subject, when, author }; });
+      try {
+        const r = await exec("git", [...READ, "log", "--first-parent", `-n${LOG_SIZE}`, "--format=%H%x1f%h%x1f%s%x1f%ar%x1f%an", ...(merge ? [`${merge}..HEAD`] : []), "--"], { cwd: root, on });
+        if (key() !== context || root !== this.root) return;
+        this.log = r.code !== 0 ? [] : r.stdout.split("\n").filter(Boolean).map((l) => { const [sha, short, subject, when, author] = l.split("\x1f"); return { sha, short, subject, when, author }; });
+      } catch {
+        if (key() !== context || root !== this.root) return;
+        this.log = [];
+      }
       cx.notify();
     });
   }
@@ -402,6 +428,7 @@ export default class Changes extends View {
   async load(path, context) {
     const file = this.files.find((f) => f.path === path), root = this.root, on = this.on;
     if (!file) return;
+    const scope = this.scopeId(), range = this.range;
     let lines;
     if (file.fresh || (!this.hasHead && file.status === "A")) {
       const text = await readTextFile(`${root}/${path}`, { on }).catch(() => null);
@@ -412,22 +439,21 @@ export default class Changes extends View {
         lines = [`@@ -0,0 +1,${file.add} @@`, ...text.slice(0, 400000).replace(/\n$/, "").split("\n").slice(0, 1500).map(l => `+${l}`)];
       }
     } else {
-      const range = this.hasHead ? this.range : [];
-      const r = await exec("git", [...READ, "diff", ...range, "--no-ext-diff", "--no-textconv", "--no-color", "--", path], { cwd: root, on });
+      const r = await exec("git", [...READ, "diff", ...(this.hasHead ? range : []), "--no-ext-diff", "--no-textconv", "--no-color", "--", path], { cwd: root, on });
       if (r.code !== 0) throw new Error(r.stderr);
       const all = r.stdout.replace(/\n$/, "").split("\n"), first = all.findIndex((l) => l.startsWith("@@"));
       lines = first < 0 ? [file.binary ? "Binary file changed" : "No text diff available"] : all.slice(first);
       // The unchanged lines around the hunks, from the new side of the file:
       // the picked commit's blob, else the working tree. A cut diff or a deleted file has none.
       if (first >= 0 && lines.length <= DIFF_LINES && file.status !== "D") {
-        const commit = this.scope === "commit" && range.length === 2 ? range[1] : null;
+        const commit = range.length === 2 ? range[1] : null;
         const text = commit ? await exec("git", [...READ, "show", `${commit}:${path}`], { cwd: root, on }).then((s) => s.code === 0 ? s.stdout : null).catch(() => null)
           : await readTextFile(`${root}/${path}`, { on }).catch(() => null);
         if (typeof text === "string") lines = fillGaps(lines, text);
       }
     }
     if (lines.length > (lines.some((l) => l[0] === "=") ? FILE_LINES + DIFF_LINES : DIFF_LINES)) lines = lines.slice(0, DIFF_LINES);
-    if (key() === context && this.open === path) this.setLines(lines.map(line => line.length > 4000 ? line.slice(0, 4000) + "… (line truncated)" : line), path);
+    if (key() === context && this.open === path && scope === this.scopeId() && range === this.range) this.setLines(lines.map(line => line.length > 4000 ? line.slice(0, 4000) + "… (line truncated)" : line), path);
   }
 
   setLines(lines, path) {
@@ -615,12 +641,13 @@ export default class Changes extends View {
     const rows = (indexes ? indexes.sort((a, b) => a - b).map((i) => this.rows[i]) : this.rows.filter((r) => r.gap === undefined)).filter(Boolean).slice(0, 400);
     const span = this.span(rows), title = `${this.open}${span ? `:${span.replace(/^(removed )?lines? /, "")}` : ""}`;
     const head = indexes ? `In ${this.where(this.open)}, ${span || "these lines"} of the diff (${this.scopeWords()}; new-file line numbers; - lines are removed):` : `The diff of ${this.where(this.open)} (${this.scopeWords()}):`;
-    cx.spawn(async (cx) => { try { await ask({ title, context: `${head}\n${this.quote(rows)}` }); } catch (e) { this.note_ = `Ask failed: ${e}`; } cx.notify(); });
+    cx.spawn(async (cx) => { try { await ask({ title, context: `${head}\n${this.quote(rows)}`, folder: this.root }); } catch (e) { this.note_ = `Ask failed: ${e}`; } cx.notify(); });
   }
 
   // Every comment, with its lines, as one review message.
   submit(cx) {
-    if (!this.comments.length || !this.root) return;
+    if (!this.comments.length || !this.root || this.submission) return;
+    const draft = this.draftKey();
     const list = [...this.comments].sort((a, b) => a.path.localeCompare(b.path) || (a.from?.number ?? -1) - (b.from?.number ?? -1));
     const parts = list.map((c) => {
       if (c.whole) return `### ${c.path}, whole file (${this.describe(c.path)})\n\nComment: ${c.text}`;
@@ -636,12 +663,36 @@ export default class Changes extends View {
     });
     const n = list.length, title = `Review · ${n} comment${n > 1 ? "s" : ""}`;
     const context = `Code review of ${this.root}${this.on ? ` (on ${this.on})` : ""}: ${this.scopeWords()}. ${n} comment${n > 1 ? "s" : ""}. Line numbers are new-file numbers; "-" lines are removed.\n\n${parts.join("\n\n")}`;
-    this.submitting = Date.now();
+    const sent = `${Date.now().toString(36)}.${Math.random().toString(36).slice(2)}`;
+    this.submission = { sent, draft, list };
     cx.spawn(async (cx) => {
-      try { const r = await ask({ title, context, sent: SENT }); if (r === "sent") this.setComments([], cx); else if (r === "none") this.submitting = null; }
-      catch (e) { this.note_ = `Submit failed: ${e}`; this.submitting = null; }
+      try {
+        const r = await ask({ title, context, sent, folder: this.root });
+        if (r === "none") this.submission = null;
+      } catch (e) {
+        this.note_ = `Submit failed: ${e}`;
+        this.submission = null;
+      }
       cx.notify();
     });
+  }
+
+  finishSubmission(sent, delivered, cx) {
+    if (this.submission?.sent !== sent) return;
+    const { draft, list } = this.submission;
+    this.submission = null;
+    const outcomes = { ...(shared(SENT) ?? {}) };
+    delete outcomes[sent];
+    setShared(SENT, outcomes);
+    if (!delivered) return;
+    const drafts = { ...(shared(DRAFTS) ?? {}) };
+    const sentComments = new Map(list.map((comment) => [comment.id, JSON.stringify(comment)]));
+    const remaining = (drafts[draft] ?? []).filter((comment) => sentComments.get(comment.id) !== JSON.stringify(comment));
+    if (draft === this.draftKey()) this.setComments(remaining, cx);
+    else {
+      if (remaining.length) drafts[draft] = remaining; else delete drafts[draft];
+      setShared(DRAFTS, drafts);
+    }
   }
 
   commit(cx) {
@@ -672,6 +723,11 @@ export default class Changes extends View {
     ];
     const box = h_flex().id("scope-box").h(24).px(8).gap(6).items_center().rounded(6).border_1().border_color(this.choosingScope ? t.accent : t.border).bg(t.raised).cursor_pointer().hover((s) => s.bg(t.hover))
       .tooltip("What is reviewed: the uncommitted changes, the last commit, the whole branch, or one commit").child(div().text_size(12).child(this.scopeLabel())).child(svg("mods/reviewer/chevron-down.svg").size(11).text_color(t.dim));
+    const drafts = shared(DRAFTS) ?? {};
+    const draftCount = (id) => {
+      const n = drafts[this.draftKey(id)]?.length ?? 0;
+      return div().flex_none().text_size(10).text_color(t.accent).child(n ? `${n} draft${n === 1 ? "" : "s"}` : "");
+    };
     const check = (on) => on ? svg("mods/reviewer/check.svg").size(12).text_color(t.accent) : div().w(12);
     // The recent commits, newest first: a click reviews that commit on its own.
     const commits = (this.log ?? []).map((c) =>
@@ -679,12 +735,14 @@ export default class Changes extends View {
         .child(div().flex_none().text_size(11).font_family(codeFont()).text_color(t.dim).child(c.short))
         .child(div().flex_1().min_w(0).text_size(12).truncate().child(c.subject))
         .child(div().flex_none().text_size(10).text_color(t.muted).child(c.when))
+        .child(draftCount(this.scopeId("commit", c.sha)))
         .child(check(this.scope === "commit" && this.sha === c.sha)));
     return Popover.new("scope").open(this.choosingScope).on_open_change((open, cx) => { this.choosingScope = open; if (open) this.loadLog(cx); cx.notify(); })
       .trigger(box)
       .content(v_flex().mt(4).min_w(300).max_w(420).p(6).gap(2).rounded(8).border_1().border_color(t.border).bg(t.popover).shadow_md().children(options.map((o) =>
         h_flex().id(`scope-${o.scope}`).px(10).py(7).gap(10).items_center().rounded(6).when(o.ok, (e) => e.cursor_pointer().hover((s) => s.bg(t.hover)).on_click((_e, cx) => this.setScope(o.scope, cx))).when(!o.ok, (e) => e.opacity(0.5))
           .child(v_flex().flex_1().min_w(0).gap(2).child(div().text_size(12).child(o.label)).child(div().text_size(11).text_color(t.dim).truncate().child(o.detail)))
+          .child(draftCount(o.scope))
           .child(check(o.scope === this.scope))))
         .child(div().mt(4).mx(4).border_t(1).border_color(t.border))
         .child(div().px(10).pt(6).pb(2).text_size(11).text_color(t.dim).truncate().child(i.merge ? `One commit on ${i.branch}, on its own` : "One commit, on its own"))
@@ -768,18 +826,31 @@ export default class Changes extends View {
     if (size !== this.fontSize) { this.fontSize = size; this.row = rowOf(size); this.measure(); }
     // "Full file" may have been switched in another copy of the panel.
     else if (this.full() !== this.builtFull) this.rebuild();
-    // The dialog reports a sent review through a shared key; the draft goes.
-    const sentAt = shared(SENT);
-    if (this.submitting && typeof sentAt === "number" && sentAt >= this.submitting) { this.submitting = null; cx.timer.after(1, (cx) => this.setComments([], cx)); }
+    // Each dialog reports back to its own submission, even after a scope change.
+    if (this.submission) {
+      const { sent } = this.submission, outcome = shared(SENT)?.[sent];
+      if (typeof outcome === "number" || outcome === false) {
+        cx.timer.after(1, (cx) => this.finishSubmission(sent, typeof outcome === "number", cx));
+      }
+    }
     const t = theme(), colors = palette(props()?.palette, t), add = this.files.reduce((n, f) => n + f.add, 0), del = this.files.reduce((n, f) => n + f.del, 0);
     const enabled = Boolean(this.message.trim() && this.root && !this.busy && !this.loading);
     const target = this.target(), n = this.comments.length, canAsk = Boolean(this.open && this.rows.length);
     const commented = new Set();
     for (const it of this.items) if (it.kind === "comment") for (let j = it.from; j <= it.to; j++) commented.add(j);
-    const perFile = {};
-    for (const c of this.comments) perFile[c.path] = (perFile[c.path] ?? 0) + 1;
+    const perFile = new Map();
+    for (const c of this.comments) perFile.set(c.path, (perFile.get(c.path) ?? 0) + 1);
     const button = (id, label, primary, action) => div().id(id).h(24).px(10).flex().items_center().rounded(6).bg(primary ? t.solid : t.raised).text_color(primary ? t.solid_foreground : t.foreground).text_size(12).font_medium().cursor_pointer().hover((s) => s.opacity(0.88)).on_click(action).child(label);
     const link = (id, label, action) => div().id(id).h(24).px(8).flex().items_center().rounded(6).text_size(12).text_color(t.dim).cursor_pointer().hover((s) => s.bg(t.hover).text_color(t.foreground)).on_click(action).child(label);
+    const compact = (this.size?.width ?? 0) < 600;
+    const stats = () => h_flex().flex_none().gap(8).items_center()
+      .child(div().text_size(11).text_color(t.ansi2).child(`+${add}`))
+      .child(div().text_size(11).text_color(t.ansi1).child(`−${del}`));
+    const actions = () => h_flex().flex_none().gap(6).items_center()
+      .when(n > 0 && !this.submission, (e) => e.child(link("review-discard", "Discard", (_e, cx) => this.setComments([], cx)))
+        .child(button("review-submit", `Submit review · ${n}`, true, (_e, cx) => this.submit(cx))))
+      .when(Boolean(this.submission), (e) => e.child(div().text_size(12).text_color(t.dim).child("Review dialog open")))
+      .when(n === 0 && canAsk && !this.submission, (e) => e.child(button("ask", "Ask about diff", false, (_e, cx) => this.askAbout(null, cx))));
     return v_flex().id("changes").size_full().min_h(0).relative().rounded(10).overflow_hidden().bg(t.background).border_1().border_color(t.border).text_color(t.foreground).text_size(13).track_focus(this.handle)
       .on_size_change((size, cx) => { const w = this.size?.width; this.size = size; if (w !== size.width) { this.rebuild(); cx.notify(); } })
       .on_key_down((e, cx) => {
@@ -787,20 +858,21 @@ export default class Changes extends View {
         else if (e.key === "escape" && this.composer) { this.closeComposer(cx); cx.stop_propagation(); }
         else if (e.key === "enter" && (e.modifiers?.platform || e.modifiers?.control) && this.composer) { this.addComment(cx); cx.stop_propagation(); }
       })
-      .child(h_flex().h(42).flex_none().px(14).gap(8).items_center().border_b(1).border_color(t.border)
-        .child(div().font_semibold().child("Changes"))
-        .child(div().h(24).px(8).flex().items_center().rounded(6).border_1().border_color(t.border).text_size(12).text_color(t.muted).child(`${this.files.length} files`))
-        .when(Boolean(this.root) && this.hasHead, (e) => e.child(this.scopePicker(t)))
-        .child(div().flex_1())
-        // Full file: the icon shows what a click does (unfold when folded, fold when the whole file shows).
-        .when(this.gaps?.length > 0, (e) => e.child(div().id("full-file").size(24).flex().items_center().justify_center().rounded(6).border_1().border_color(this.full() ? t.accent : t.border).bg(this.full() ? t.accent + "22" : NONE).text_color(this.full() ? t.accent : t.dim).cursor_pointer().hover((s) => s.bg(t.hover).text_color(t.foreground))
-          .tooltip(this.full() ? "Fold the unchanged lines" : "Show the whole file").on_click((_e, cx) => this.toggleFull(cx))
-          .child(svg(this.full() ? "mods/reviewer/fold-vertical.svg" : "mods/reviewer/unfold-vertical.svg").size(13))))
-        .child(div().text_size(11).text_color(t.ansi2).child(`+${add}`)).child(div().text_size(11).text_color(t.ansi1).child(`−${del}`))
-        .when(n > 0, (e) => e.child(link("review-discard", "Discard", (_e, cx) => this.setComments([], cx))).child(button("review-submit", `Submit review · ${n}`, true, (_e, cx) => this.submit(cx))))
-        .when(n === 0 && canAsk, (e) => e.child(button("ask", "Ask about diff", false, (_e, cx) => this.askAbout(null, cx)))))
+      .child(v_flex().flex_none().border_b(1).border_color(t.border)
+        .child(h_flex().h(42).flex_none().px(14).gap(8).items_center()
+          .child(div().font_semibold().child("Changes"))
+          .when(!compact, (e) => e.child(div().h(24).px(8).flex().items_center().rounded(6).border_1().border_color(t.border).text_size(12).text_color(t.muted).child(`${this.files.length} files`)))
+          .when(Boolean(this.root) && this.hasHead, (e) => e.child(this.scopePicker(t)))
+          .child(div().flex_1())
+          // The icon shows what a click does (unfold when folded, fold when the whole file shows).
+          .when(this.gaps?.length > 0, (e) => e.child(div().id("full-file").size(24).flex().items_center().justify_center().rounded(6).border_1().border_color(this.full() ? t.accent : t.border).bg(this.full() ? t.accent + "22" : NONE).text_color(this.full() ? t.accent : t.dim).cursor_pointer().hover((s) => s.bg(t.hover).text_color(t.foreground))
+            .tooltip(this.full() ? "Fold the unchanged lines" : "Show the whole file").on_click((_e, cx) => this.toggleFull(cx))
+            .child(svg(this.full() ? "mods/reviewer/fold-vertical.svg" : "mods/reviewer/unfold-vertical.svg").size(13))))
+          .when(!compact, (e) => e.child(stats()).child(actions())))
+        .when(compact, (e) => e.child(h_flex().h(34).flex_none().px(14).gap(8).items_center()
+          .child(stats()).child(div().flex_1()).child(actions()))))
       .child(v_flex().id("changes-list").flex_none().h(Math.min(200, Math.max(44, this.files.length * 28 + 12))).overflow_y_scrollbar().p(6).border_b(1).border_color(t.border).children(this.files.map((f) => {
-        const parts = f.path.split("/"), name = parts.pop(), k = perFile[f.path];
+        const parts = f.path.split("/"), name = parts.pop(), k = perFile.get(f.path);
         return h_flex().id(`change-${f.path}`).h(28).flex_none().px(8).gap(8).items_center().rounded(7).cursor_pointer().when(this.open === f.path, (e) => e.bg(t.selected)).hover((s) => s.bg(t.hover)).on_click((_e, cx) => this.pick(f.path, cx))
           .child(div().w(14).text_size(11).text_color(f.status === "A" ? t.ansi2 : f.status === "D" ? t.ansi1 : f.status === "U" ? t.ansi1 : t.blocked).child(f.status))
           .child(h_flex().flex_1().min_w(0).child(div().text_color(t.dim).truncate().child(parts.length ? parts.join("/") + "/" : "")).child(div().max_w(260).min_w(0).truncate().child(name)))

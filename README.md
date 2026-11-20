@@ -67,9 +67,9 @@ Everything the shipped panel did (file list, diff, commit box) stays.
 
 This fork targets herdr-App 0.1.16 and herdr-core (`hc`) 0.1.21. The app uses its configured core to send review comments.
 
-1. Run `scripts/install.sh`. It copies `mods/reviewer/` into
-   `~/.config/herdr-app/mods/` (or `$HERDR_APP_HOME/mods/`) and runs
-   `herdr-app check` on the copy. Without the script: copy the folder by
+1. Run `scripts/install.sh`. It runs `herdr-app check` on a staged copy
+   before installing it in `~/.config/herdr-app/mods/` (or
+   `$HERDR_APP_HOME/mods/`). Without the script: copy the folder by
    hand and run `herdr-app check ~/.config/herdr-app/mods/reviewer`. Don't
    symlink it; Herdr loads a linked folder but never reloads it.
 2. With Herdr open, the script then puts Reviewer where the Changes panel
@@ -77,7 +77,7 @@ This fork targets herdr-App 0.1.16 and herdr-core (`hc`) 0.1.21. The app uses it
    the Changes button in the tab bar opens Reviewer. Herdr's own layouts
    are read-only, so if you are on one (such as the default `main`) the
    script clones it as `<name>-reviewer` and switches to it; the clone
-   keeps your sizes and look. A layout you cloned yourself is edited in
+   keeps your sizes and look. A personal layout is edited in
    place. It also lifts the panel's 900px width cap so you can drag it
    wider; the terminals beside it narrow as it grows (this step needs
    `python3`; without it the cap stays). Pass `--no-layout` to skip this
@@ -95,10 +95,7 @@ if you are on a shipped one), replace the `changes` block's mod with
 on the node that holds it (`panel` in `main`). Herdr never overwrites it, since it
 is a clone of the shipped `changes` mod rather than the shipped mod itself.
 
-Or ask the agent in your Herdr window to add
-`herdr.dev/mods/vytasgavelis/reviewer`; the steps are in Herdr's
-`AGENTS.md`. Those steps only copy the folder, so ask it to swap the
-`changes` block as above too. Reviewer's `mod.json` has `"place": "none"`
+Reviewer's `mod.json` has `"place": "none"`
 because Herdr can't dock a new mod into a shipped layout, and in a
 personal one it would dock at the window's edge, not in the Changes
 panel's spot.
@@ -109,10 +106,9 @@ mod opened as an overlay of itself.
 
 ## Versions
 
-The mod's version is the `version` field in `mods/reviewer/mod.json`, and
-each release is tagged `v<version>` in this repo. Installed copies carry no
-git history, so quote that field when reporting a problem. Version 0.6.0 was
-last tested on Herdr 0.1.13 (`herdr-app` 0.1.13, `herdr` 0.9.5).
+This checkout is based on upstream Reviewer 0.6.0. The mod version is the
+`version` field in `mods/reviewer/mod.json`. When reporting a problem, include
+that version and the output of `herdr-app --version` and `hc --version`.
 
 ## Commands and props
 

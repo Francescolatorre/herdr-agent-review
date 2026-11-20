@@ -3,7 +3,7 @@
 // (main.js hands the copy over to this class when props().dialog is set).
 // `context` is text the caller already formatted (a file, lines, a hunk);
 // `title` is the short label at the top; `sent` (optional) is a shared key
-// the dialog sets to the send time once the text went out, so the caller
+// the dialog uses to report delivery or cancellation through shared state, so the caller
 // can react (the panel clears its comments).
 // The note and the context go to the agent as one message with `hc send`.
 // It goes to the focused agent of the space (else an idle one, else the
@@ -12,10 +12,12 @@
 // Enter or cmd-enter sends, Esc closes. Commands: "reviewer.send", "reviewer.close".
 import { div, svg } from "gpui-kit";
 import { v_flex, h_flex, TextareaState, Textarea, Popover } from "gpui-base";
-import { agents, focused, spaces, knownAgents, hc, run, notify, props, closeOverlay, theme, settings, nextCommand, setShared } from "herdr";
+import { agents, focused, spaces, knownAgents, hc, run, notify, props, closeOverlay, theme, settings, nextCommand, shared, setShared, window } from "herdr";
 
 // Where agents are looked up and started: the space's machine, which may not be this one.
 const where = (space) => space?.machine ? `on ${space.machine}` : "on this machine";
+
+const agentName = (agent) => agent.tab_name || agent.program?.name || agent.app || agent.address;
 
 const DOT = { working: "working", blocked: "blocked", done: "done", idle: "idle" };
 
@@ -23,13 +25,15 @@ export class Dialog {
   init(_props, cx) {
     const p = props() ?? {};
     this.context = String(p.context ?? ""); this.title = p.title ?? "";
-    this.note = ""; this.pick = null; this.error = null; this.sending = false; this.closed = false; this.confirm = false; this.choosing = false; this.copied = false;
+    this.space = p.space ?? focused()?.space; this.folder = p.folder;
+    this.overlay = p.overlay; this.sentKey = p.sent;
+    this.note = ""; this.pick = null; this.error = null; this.sending = false; this.lookingUp = false; this.closed = false; this.confirm = null; this.choosing = false; this.copied = false;
     this.input = TextareaState.new({ placeholder: this.context ? "Your note to the agent (optional)…" : "What do you want to ask?", rows: this.context ? 2 : 3 });
     this.input.set_auto_grow(this.context ? 2 : 3, this.context ? 4 : 6);
-    this.input.on("change", (_e, cx) => { this.note = this.input.value(); this.error = null; this.confirm = false; cx.notify(); });
+    this.input.on("change", (_e, cx) => { this.note = this.input.value(); this.error = null; this.confirm = null; cx.notify(); });
     this.input.on("submit", (_e, cx) => this.send(cx));
     this.input.focus();
-    cx.timer.after(600, () => this.input.focus());
+    cx.timer.after(600, () => { if (!this.closed && !this.choosing && !this.sending) this.input.focus(); });
     this.handle = cx.focus_handle();
     cx.spawn(async (cx) => {
       for (;;) {
@@ -41,66 +45,131 @@ export class Dialog {
     });
   }
 
-  close() { this.closed = true; closeOverlay(props().overlay); }
+  close() {
+    if (this.sending && !this.lookingUp) return;
+    this.report(false);
+    this.dismiss();
+  }
+  onRemoved() {
+    if (this.closed) return;
+    this.closed = true;
+    if (this.sending && !this.lookingUp) {
+      notify({ title: "Delivery unconfirmed", body: "Check the recipient before sending the draft again.", level: "warning" });
+    }
+    this.report(false);
+  }
+  dismiss() {
+    this.closed = true;
+    closeOverlay(this.overlay);
+  }
+  report(result) {
+    if (!this.sentKey) return;
+    const previous = shared("reviewer.sent");
+    setShared("reviewer.sent", { ...(previous && typeof previous === "object" ? previous : {}), [this.sentKey]: result });
+  }
   // The text went out: close, tell the caller through the `sent` key, toast.
   done(title) {
-    this.close(); notify({ title, body: this.title || this.note.trim().slice(0, 80), level: "success" });
-    if (props()?.sent) setShared(props().sent, Date.now());
+    this.sending = false;
+    this.report(Date.now());
+    notify({ title, body: this.title || this.note.trim().slice(0, 80), level: "success" });
+    this.dismiss();
   }
 
   // The agents in this space; the picked one, else the focused, else an idle one, else the first.
   candidates() {
-    const space = focused()?.space;
-    return agents().filter((a) => a.space === space);
+    return agents().filter((a) => a.space === this.space);
   }
-  target() {
-    const list = this.candidates();
-    return list.find((a) => a.address === this.pick) ?? list.find((a) => a.focused) ?? list.find((a) => a.status === "idle") ?? list[0] ?? null;
+  target(list = this.candidates()) {
+    if (this.pick) return list.find((a) => a.address === this.pick) ?? null;
+    return list.find((a) => a.focused) ?? list.find((a) => a.status === "idle") ?? list[0] ?? null;
+  }
+
+  confirmation(agent) {
+    return agent?.status === "working" || agent?.status === "blocked"
+      ? `${agent.address}:${agent.status}` : null;
   }
   text() { return [this.note.trim(), this.context.trim()].filter(Boolean).join("\n\n"); }
 
   send(cx) {
+    if (this.sending || this.closed) return;
     const text = this.text(), agent = this.target();
-    if (this.sending) return;
     if (!text) { this.error = "Type a note first"; cx.notify(); return; }
+    if (!agent && this.pick) {
+      this.error = "The selected agent is unavailable. Choose another recipient.";
+      cx.notify();
+      return;
+    }
     if (!agent) { this.start(cx); return; }
-    const busy = agent.status === "working" || agent.status === "blocked";
-    if (busy && !this.confirm) { this.confirm = true; cx.notify(); return; }
+    const confirm = this.confirmation(agent);
+    if (confirm && confirm !== this.confirm) { this.confirm = confirm; cx.notify(); return; }
     this.sending = true; this.error = null; cx.notify();
-    const name = agent.program?.name ?? agent.app ?? agent.address;
-    cx.spawn(async (cx) => {
-      const r = await hc(["send", ...(busy ? ["--force"] : []), "--", agent.address, text]).catch((e) => ({ code: 1, stdout: "", stderr: String(e) }));
-      this.sending = false;
-      if (r.code === 0) {
-        this.done(`Sent to ${name}`);
-        run("pane.focus", { terminal: agent.address });
-      }
-      else { this.error = (r.stderr || r.stdout).trim().slice(0, 300) || "hc send failed"; this.confirm = false; cx.notify(); }
-    });
+    cx.spawn((cx) => this.deliver(agent, text, cx));
+  }
+
+  async deliver(agent, text, cx) {
+    const options = agent.status === "blocked" ? ["--force"] : agent.status === "working" ? ["--if", "working"] : [];
+    const result = await hc(["send", ...options, "--", agent.address, text])
+      .catch((error) => ({ code: 1, stdout: "", stderr: String(error) }));
+    if (this.closed) return;
+    this.sending = false;
+    if (result.code === 0) {
+      this.done(`Sent to ${agentName(agent)}`);
+      run("pane.focus", { terminal: agent.address });
+    } else {
+      this.error = (result.stderr || result.stdout).trim().slice(0, 300) || "hc send failed";
+      this.confirm = null;
+      cx.notify();
+    }
   }
 
   // Herdr orders known agents by use; the first installed one on the space's
   // machine is started. The lookup can take seconds on a remote machine, and
   // Esc or Cancel in the meantime wins: nothing is started once closed.
   start(cx) {
-    const space = spaces().find((s) => s.id === focused()?.space), text = this.text();
+    const space = spaces().find((s) => s.id === this.space), text = this.text();
     if (!space) { this.error = "No space is shown"; cx.notify(); return; }
-    this.sending = true; this.error = null; cx.notify();
+    this.sending = true; this.lookingUp = true; this.error = null; cx.notify();
     cx.spawn(async (cx) => {
       try {
         const agent = (await knownAgents({ on: space.machine })).find((a) => a.installed);
         if (this.closed) return;
-        if (!agent) { this.error = `No agent is installed ${where(space)}. Install one first.`; return; }
-        run("tab.new", { space: space.id, argv: agent.run, task: text });
-        this.done(`Started ${agent.name} with your question`);
+        this.lookingUp = false;
+        if (!agent) throw new Error(`No agent is installed ${where(space)}. Install one first.`);
+        const previousTabs = new Set(spaces().find((s) => s.id === this.space)?.tabs.map((tab) => tab.id));
+        run("tab.new", { name: agent.name, space: space.id, folder: this.folder, argv: agent.run });
+        this.waitForAgent(cx, agent.name, previousTabs, text);
+        return;
       }
       catch (e) { this.error = String(e?.message || e).trim().slice(0, 300) || "Could not start an agent"; }
-      finally { this.sending = false; cx.notify(); }
+      if (!this.closed) { this.sending = false; this.lookingUp = false; cx.notify(); }
+    });
+  }
+
+  waitForAgent(cx, name, previousTabs, text, until = Date.now() + 15000) {
+    cx.timer.after(100, (cx) => {
+      if (this.closed) return;
+      const space = spaces().find((s) => s.id === this.space);
+      const newTabs = space?.tabs.filter((tab) => tab.named && tab.name === name && !previousTabs.has(tab.id)) ?? [];
+      const agent = newTabs.length === 1 ? this.candidates().find((a) => a.tab === newTabs[0].id) : null;
+      if (agent?.status === "idle" || agent?.status === "done") {
+        this.pick = agent.address;
+        cx.spawn((cx) => this.deliver(agent, text, cx));
+      } else if (Date.now() < until && newTabs.length < 2) {
+        this.waitForAgent(cx, name, previousTabs, text, until);
+      } else {
+        this.error = "The new agent did not become ready. Check the new tab, then choose a recipient.";
+        this.sending = false;
+        cx.notify();
+      }
     });
   }
 
   render(cx) {
-    const t = theme(), list = this.candidates(), agent = this.target(), isTarget = (a) => Boolean(agent) && a.address === agent.address;
+    const t = theme(), list = this.candidates(), agent = this.target(list);
+    const sendKey = window().platform === "macos" ? "Cmd+Enter" : "Ctrl+Enter";
+    const confirming = Boolean(agent && this.confirm && this.confirm === this.confirmation(agent));
+    const missing = Boolean(this.pick && !agent);
+    const isTarget = (a) => a.address === agent?.address;
     const name = (a) => `${a.program?.name ?? a.app ?? a.address}`;
     const button = (id, text, primary, action, disabled) => h_flex().id(id).h(32).px(14).items_center().rounded(8).border_1()
       .border_color(primary ? t.solid : t.input).bg(primary ? t.solid : t.raised).text_color(primary ? t.solid_foreground : t.foreground).text_size(12.5).font_medium()
@@ -113,7 +182,8 @@ export class Dialog {
     // The target as a select-looking box; with a chevron when there is a list to open.
     const agentBox = (a, opens) => h_flex().id("to-box").h(28).px(9).gap(7).items_center().rounded(7).border_1().border_color(this.choosing ? t.accent : t.input).bg(t.raised)
       .when(opens, (e) => e.cursor_pointer().hover((s) => s.bg(t.hover)))
-      .child(dot(a)).child(div().text_size(12).child(`${name(a)} · ${a.tab_name}`)).child(div().text_size(10.5).text_color(t.dim).child(a.status))
+      .when(Boolean(a), (e) => e.child(dot(a)).child(div().text_size(12).child(`${name(a)} · ${a.tab_name}`)).child(div().text_size(10.5).text_color(t.dim).child(a.status)))
+      .when(!a, (e) => e.child(div().text_size(12).child("Choose an agent")))
       .when(opens, (e) => e.child(svg("mods/reviewer/chevron-down.svg").size(12).text_color(t.dim)));
     return v_flex().id("ask-agent").track_focus(this.handle)
       .on_key_down((e, cx) => {
@@ -122,20 +192,22 @@ export class Dialog {
       })
       .size_full().min_h(0).p(18).gap(10).bg(t.popover).text_color(t.foreground).text_size(13)
       .child(h_flex().items_center().gap(8)
-        .child(div().text_size(15).font_semibold().child("Ask the agent"))
+        .child(div().text_size(15).font_semibold().child(this.sentKey ? "Submit review" : "Ask the agent"))
         .child(div().flex_1().min_w(0).truncate().text_size(12).text_color(t.dim).child(this.title))
         .child(div().text_size(11).text_color(t.dim).child("Esc")))
       // Who gets it: a dropdown showing the focused agent; open it to pick another in the space.
       .child(!list.length
-        ? div().text_size(12).text_color(t.muted).child(`No agent is running in this space. Send starts the most-used installed agent ${where(spaces().find((s) => s.id === focused()?.space))} in a new tab.`)
+        ? div().text_size(12).text_color(t.muted).child(missing
+            ? "The selected agent is no longer available."
+            : `No agent is running in this space. Start agent opens the most-used installed agent ${where(spaces().find((s) => s.id === this.space))} in a new tab.`)
         : h_flex().gap(8).items_center()
             .child(div().text_size(11.5).text_color(t.dim).child("To"))
-            .child(list.length > 1
+            .child(list.length > 1 || missing
               ? Popover.new("to").open(this.choosing).on_open_change((open, cx) => { this.choosing = open; cx.notify(); })
                   .trigger(agentBox(agent, true))
                   .content(v_flex().mt(4).min_w(260).p(4).rounded(8).border_1().border_color(t.border).bg(t.popover).shadow_md().children(list.map((a) =>
                     h_flex().id(`to-${a.address}`).h(28).px(8).gap(7).items_center().rounded(6).cursor_pointer().hover((s) => s.bg(t.hover))
-                      .on_click((_e, cx) => { this.pick = a.address; this.confirm = false; this.choosing = false; cx.notify(); })
+                      .on_click((_e, cx) => { this.pick = a.address; this.confirm = null; this.error = null; this.choosing = false; cx.notify(); })
                       .child(dot(a))
                       .child(div().flex_1().text_size(12).child(`${name(a)} · ${a.tab_name}`))
                       .child(div().text_size(10.5).text_color(t.dim).child(a.status))
@@ -157,9 +229,9 @@ export class Dialog {
       .when(this.context.length > 8000, (el) => el.child(div().text_size(11).text_color(t.blocked).whitespace_normal().child(`This is ${(this.context.length / 1024).toFixed(0)} KB of text pasted into the agent's terminal; some agents are slow or cut it short at this size. Consider sending fewer comments at a time.`)))
       .when(Boolean(this.error), (el) => el.child(div().text_size(11.5).text_color(t.ansi1).child(this.error)))
       .child(h_flex().items_center().gap(8)
-        .child(div().flex_1().min_w(0).truncate().text_size(11.5).text_color(this.confirm ? t.blocked : t.dim)
-          .child(this.confirm && agent ? `${name(agent)} is ${agent.status}. Send anyway? The text is typed into its input now.` : agent ? `cmd-enter sends · goes to ${name(agent)} as one message` : "cmd-enter sends"))
-        .child(button("ask-cancel", "Cancel", false, () => this.close()))
-        .child(button("ask-send", this.sending ? "Sending…" : this.confirm ? "Send anyway" : agent ? "Send" : "Start agent", true, (_e, cx) => this.send(cx), this.sending)));
+        .child(div().flex_1().min_w(0).truncate().text_size(11.5).text_color(confirming ? t.blocked : t.dim)
+          .child(confirming ? `${agentName(agent)} is ${agent.status}. Send anyway? The text is typed into its input now.` : agent ? `${sendKey} sends · goes to ${agentName(agent)} as one message` : `${sendKey} sends`))
+        .child(button("ask-cancel", "Cancel", false, () => this.close(), this.sending && !this.lookingUp))
+        .child(button("ask-send", this.lookingUp ? "Finding agent…" : this.sending ? "Sending…" : confirming ? "Send anyway" : agent || missing ? "Send" : "Start agent", true, (_e, cx) => this.send(cx), this.sending || missing)));
   }
 }
