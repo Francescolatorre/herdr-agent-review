@@ -69,7 +69,7 @@ export class Dialog {
     this.sending = true; this.error = null; cx.notify();
     const name = agent.program?.name ?? agent.app ?? agent.address;
     cx.spawn(async (cx) => {
-      const r = await hc(["send", ...(busy ? ["--force"] : []), agent.address, text]).catch((e) => ({ code: 1, stdout: "", stderr: String(e) }));
+      const r = await hc(["send", ...(busy ? ["--force"] : []), "--", agent.address, text]).catch((e) => ({ code: 1, stdout: "", stderr: String(e) }));
       this.sending = false;
       if (r.code === 0) {
         this.done(`Sent to ${name}`);

@@ -173,12 +173,22 @@ export default class Changes extends View {
     if (this.on || this.watched === root) return;
     this.watched = root;
     cx.spawn(async (cx) => {
+      let pending;
       try {
         while (this.watched === root) {
-          await watchFolder(root);
-          if (this.watched === root) this.refresh(cx);
+          pending = watchFolder(root);
+          this.folderWatch = pending;
+          await pending;
+          if (this.folderWatch !== pending) return;
+          this.folderWatch = null;
+          this.refresh(cx);
         }
-      } catch { this.watched = null; }
+      } catch {
+        if (this.folderWatch === pending) {
+          this.folderWatch = null;
+          this.watched = null;
+        }
+      }
     });
   }
 
@@ -189,6 +199,8 @@ export default class Changes extends View {
     // for the same id, so a repo whose git keeps failing is read once, not in a loop.
     this.tried = request?.id ?? this.tried;
     if (context !== this.context) {
+      this.folderWatch?.cancel();
+      this.folderWatch = null;
       this.context = context; this.root = null; this.log = null; this.files = []; this.open = null; this.comments = []; this.composer = null;
       this.setLines([]); this.message = ""; this.input.set_value(""); this.error = null; this.note_ = null; this.watched = null; this.closed = false; this.limited = false;
     }

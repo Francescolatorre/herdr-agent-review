@@ -18,7 +18,7 @@ export async function ask({ title, context, sent }) {
   catch (e) { console.log(`the send dialog could not open, sending directly: ${e}`); }
   const agent = pickAgent();
   if (!agent) { notify({ title: "No agent in this space", body: "Start an agent in this space first.", level: "warning" }); return "none"; }
-  const r = await hc(["send", agent.address, context]).catch((e) => ({ code: 1, stdout: "", stderr: String(e) }));
+  const r = await hc(["send", "--", agent.address, context]).catch((e) => ({ code: 1, stdout: "", stderr: String(e) }));
   if (r.code === 0) {
     notify({ title: `Sent to ${agent.program?.name ?? agent.address}`, body: title, level: "success" });
     if (sent) setShared(sent, Date.now());

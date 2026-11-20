@@ -65,6 +65,8 @@ Everything the shipped panel did (file list, diff, commit box) stays.
 
 ## Install
 
+This fork targets herdr-App 0.1.16 and herdr-core (`hc`) 0.1.21. The app uses its configured core to send review comments.
+
 1. Run `scripts/install.sh`. It copies `mods/reviewer/` into
    `~/.config/herdr-app/mods/` (or `$HERDR_APP_HOME/mods/`) and runs
    `herdr-app check` on the copy. Without the script: copy the folder by
