@@ -35,6 +35,10 @@ git tag -a v<version> -m "reviewer <version>" <commit>
 git push origin v<version>
 ```
 
+Patch for fixes, minor for new behaviour. No changelog until a release
+changes something users must read about before upgrading. When Herdr
+ships a new `changes` mod, port what is wanted and update `cloned_from`.
+
 ## Scripts
 
 - `scripts/install.sh` puts the mods, keys and layout into Herdr;
@@ -56,10 +60,6 @@ Projects (classic). Use the REST API instead, for example
 `gh api -X PATCH repos/<owner>/<repo>/pulls/<n> -f base=main`,
 `gh api -X POST repos/<owner>/<repo>/pulls -f title=… -f head=… -f base=main -F body=@file`
 and `gh api -X PUT repos/<owner>/<repo>/pulls/<n>/merge -f merge_method=merge`.
-
-Patch for fixes, minor for new behaviour. No changelog until a release
-changes something users must read about before upgrading. When Herdr
-ships a new `changes` mod, port what is wanted and update `cloned_from`.
 
 ## Commits
 
