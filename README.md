@@ -6,6 +6,9 @@ you click lines to leave comments, and "Submit review" sends every comment,
 with the lines it is about, to the agent running in the space as one
 message.
 
+This is a fork of Reviewer by Vytas Gavelis (MIT) and keeps his copyright notice
+in [LICENSE](LICENSE); see [Versions](#versions) for how its releases are counted.
+
 ![reviewer](preview.png)
 
 ## What it does
@@ -66,6 +69,10 @@ Everything the shipped panel did (file list, diff, commit box) stays.
 ## Install
 
 This fork targets herdr-App 0.1.16 and herdr-core (`hc`) 0.1.21. The app uses its configured core to send review comments.
+
+A release is a zip, `herdr-reviewer-<version>.zip`, with its `.sha256`, on the
+repository's Releases page: unpack it and run `scripts/install.sh` from the
+folder (or clone the repository and check out the tag `v<version>`).
 
 1. Run `scripts/install.sh`. It runs `herdr-app check` on a staged copy
    before installing it in `~/.config/herdr-app/mods/` (or
@@ -139,9 +146,15 @@ home and a stub `herdr-app`; it needs no Herdr and never touches yours.
 
 ## Versions
 
-This checkout is based on upstream Reviewer 0.6.0; 0.7.0 adds the keys and
-`reviewer-toggle`, 0.8.0 adds `scripts/uninstall.sh`, 0.8.1 brings back the direct
-send when the send dialog can't open, tested with herdr-app 0.1.16 and hc 0.1.21.
+Reviewer started as Vytas Gavelis's mod, with releases 0.1.0 to 0.6.0. This fork
+counts its own releases from 0.1.0, so a number here is a release of this fork,
+and the original's 0.1.0 to 0.6.0 are different releases. Before the split the
+fork used the numbers 0.6.1 to 0.8.1, counted on from the original's; none of
+them stayed a release, and the tag `v0.7.0` has been removed.
+
+0.1.0 is everything up to the former 0.8.1: the keys and `reviewer-toggle`,
+`scripts/uninstall.sh`, and the direct send when the send dialog can't open.
+Tested with herdr-app 0.1.16 and hc 0.1.21.
 The install and uninstall scripts' file logic is covered by
 `scripts/test-uninstall.sh`, which passed on Windows (Git Bash) and on GitHub's
 Ubuntu, macOS and Windows runners. Trying the scripts against a real Herdr has
