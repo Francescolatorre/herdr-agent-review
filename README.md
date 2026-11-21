@@ -172,6 +172,28 @@ When opening a bug report, include what you clicked, what you saw and the
 Reviewer and Herdr versions. If useful, review and paste just the log lines
 around the incident. Sharing is optional and manual.
 
+## Files preview prototype
+
+This draft demonstrates a Markdown preview in Herdr's Files panel. The Reviewer also has an All files view. Open a Markdown file,
+including one with no Git changes, to read the rendered document. A Mermaid
+block can switch between Diagram and Source and can be commented in either
+view. Frontmatter is shown in a separate commentable YAML block. Drafts from
+multiple files in the same folder can be sent together through the existing
+Reviewer dialog, with their original file paths and line ranges.
+
+To try it on herdr-app 0.1.16, install Reviewer as above, then copy
+`mods/reviewer-files` into your Herdr app home's `mods` directory. In the
+personal layout you use for Reviewer, change the Files block's mod from
+`files` to `reviewer-files`. The existing Files button opens the preview.
+Run `herdr-app check <app-home>/mods/reviewer-files` to check the installed mod.
+
+The renderer is bundled and runs locally. Unsupported diagrams show their
+source. The files reviewed stay read-only. Comments currently attach to a
+whole frontmatter block, diagram, or Markdown section between these blocks.
+The renderer bundle comes from beautiful-mermaid (MIT), ELK (EPL-2.0), and
+entities (BSD-2-Clause). Licenses are in `mods/reviewer-files/licenses`;
+`scripts/build-mermaid.mjs` records the build inputs.
+
 ## Versions
 
 Reviewer started as Vytas Gavelis's mod, with releases 0.1.0 to 0.6.0. This fork
