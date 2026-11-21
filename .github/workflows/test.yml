@@ -52,3 +52,21 @@ jobs:
         if: hashFiles('scripts/test-uninstall.sh') != ''
         shell: bash
         run: sh scripts/test-uninstall.sh
+
+  # The release zip and its notes must keep building, and a version can't be bumped
+  # without a CHANGELOG.md entry: scripts/build-release.sh fails otherwise.
+  release-build:
+    name: release build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the zip, checksum and notes
+        run: sh scripts/build-release.sh "$RUNNER_TEMP/dist"
+      - name: Check what is in the zip
+        run: |
+          version=$(sed -n 's/^  "version": *"\([^"]*\)".*/\1/p' mods/reviewer/mod.json | head -n 1)
+          unzip -l "$RUNNER_TEMP/dist/herdr-reviewer-$version.zip" | tee "$RUNNER_TEMP/list.txt"
+          for f in mods/reviewer/mod.json mods/reviewer/main.js mods/reviewer-toggle/mod.json scripts/install.sh scripts/uninstall.sh keys.json LICENSE CHANGELOG.md; do
+            grep -q "herdr-reviewer-$version/$f\$" "$RUNNER_TEMP/list.txt" || { echo "missing in the zip: $f" >&2; exit 1; }
+          done
+          (cd "$RUNNER_TEMP/dist" && sha256sum -c "herdr-reviewer-$version.zip.sha256")
