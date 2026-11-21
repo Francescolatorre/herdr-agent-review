@@ -237,8 +237,14 @@ fill, `foreground` text at 13px. Top to bottom:
   disable Send; Esc or Cancel still close the dialog and then nothing is
   started. If discovery fails or no agent is installed, keep the dialog and
   its text open and show the error, naming the space's machine. Should the overlay fail
-  to open, the text goes straight to the space's agent (`hc send`) with a
-  toast; with no agent, a warning toast says so.
+  to open, the text goes straight to the space's agent (`hc send -- <agent>
+  <text>`) with a "Sent to <agent>" toast, and the `sent` key is set as the
+  dialog would set it. The agent is picked the way the dialog starts: the
+  focused one in that space, else an idle one, else the first. With no agent,
+  a warning toast says so. A working or blocked agent gets nothing, since the
+  dialog's "Send anyway" has nobody to ask here: a warning toast names its
+  status. A failed `hc send` shows an error toast. In each of these the drafts
+  stay.
 - Agent status does not change this panel; the dialog shows it.
 - A comment keeps the lines it was made on (`quote`, at most 60 lines),
   so a comment whose lines have since left the diff is still submitted
@@ -340,10 +346,13 @@ fill, `foreground` text at 13px. Top to bottom:
   `on_item_click` (keys `r:<row>` and `c:<comment id>`) and
   `on_item_secondary_click` (quick ask). A `TextareaState` for the
   comment, created in `init`, with `submit` → `addComment`.
-- `ask.js`: `pickAgent()`, `ask({ title, context, sent })` → opens this
-  mod as a dialog overlay with props `{ dialog: true, title, context,
-  sent }`, or sends with `hc send` and sets the `sent` key itself;
-  resolves "dialog", "sent" or "none". `dialog.js` exports `Dialog`
+- `ask.js`: `pickAgent(space)`, `ask({ title, context, sent, folder })` →
+  opens this mod as a modal dialog overlay with props `{ dialog: true,
+  title, context, sent, space, folder }` (the focused pane's space and
+  folder; `folder` defaults to its `cwd`), or, when the overlay can't open,
+  sends with `hc send` and sets shared `reviewer.sent[sent]` to the time
+  itself; resolves "dialog", "sent" or "none" (nothing sent; the caller keeps
+  the drafts). `dialog.js` exports `Dialog`
   (`init`, `render`, `send`, `start`, `close`); `main.js` hands a copy
   over to it when `props().dialog` is set, so the dialog copy never runs
   git.

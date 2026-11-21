@@ -140,11 +140,14 @@ home and a stub `herdr-app`; it needs no Herdr and never touches yours.
 ## Versions
 
 This checkout is based on upstream Reviewer 0.6.0; 0.7.0 adds the keys and
-`reviewer-toggle`, 0.8.0 adds `scripts/uninstall.sh`, tested with herdr-app
-0.1.16 and hc 0.1.21. The install and uninstall scripts' file logic is covered
-by `scripts/test-uninstall.sh`, which passed on Windows (Git Bash) and on
-GitHub's Ubuntu, macOS and Windows runners. Trying the scripts against a real
-Herdr has only been done on Windows; macOS and Linux still need that. The mod version is the
+`reviewer-toggle`, 0.8.0 adds `scripts/uninstall.sh`, 0.8.1 brings back the direct
+send when the send dialog can't open, tested with herdr-app 0.1.16 and hc 0.1.21.
+The install and uninstall scripts' file logic is covered by
+`scripts/test-uninstall.sh`, which passed on Windows (Git Bash) and on GitHub's
+Ubuntu, macOS and Windows runners. Trying the scripts against a real Herdr has
+only been done on Windows; macOS and Linux still need that. The direct send is
+covered by `tests/ask.test.mjs` with a stub; the failure itself can't be provoked
+in the app, so it has not been tried there. The mod version is the
 `version` field in `mods/reviewer/mod.json`. When reporting a problem, include
 that version and the output of `herdr-app --version` and `hc --version`.
 
