@@ -39,12 +39,10 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      # Python for Windows installs python.exe only; the scripts call python3,
-      # which on a real Windows machine is the Microsoft Store alias.
-      - name: Give Windows a python3
-        if: runner.os == 'Windows'
+      # The scripts call python3; fail early and clearly if a runner lacks it.
+      - name: Check that python3 runs
         shell: bash
-        run: cp "$(command -v python)" "$(dirname "$(command -v python)")/python3.exe"
+        run: python3 --version
       - name: Check the syntax of every script with sh
         shell: bash
         run: |
