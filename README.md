@@ -113,7 +113,10 @@ mod opened as an overlay of itself.
 ## Versions
 
 This checkout is based on upstream Reviewer 0.6.0; 0.7.0 adds the keys and
-`reviewer-toggle`, tested with herdr-app 0.1.16 and hc 0.1.21. The mod version is the
+`reviewer-toggle`, tested with herdr-app 0.1.16 and hc 0.1.21. 0.7.1 brings back
+the direct send when the send dialog can't open (`tests/ask.test.mjs` covers it
+with a stub; the failure itself can't be provoked in the app, so it has not been
+tried there). The mod version is the
 `version` field in `mods/reviewer/mod.json`. When reporting a problem, include
 that version and the output of `herdr-app --version` and `hc --version`.
 
