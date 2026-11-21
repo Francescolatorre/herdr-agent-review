@@ -1,0 +1,8 @@
+{
+  "global": {
+    "ctrl-shift-r": "mod.open:reviewer-toggle",
+    "ctrl-shift-enter": "reviewer.submit",
+    "ctrl-shift-a": "reviewer.ask",
+    "ctrl-shift-s": "reviewer.scope"
+  }
+}
