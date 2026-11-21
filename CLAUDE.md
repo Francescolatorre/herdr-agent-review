@@ -66,3 +66,15 @@ and `gh api -X PUT repos/<owner>/<repo>/pulls/<n>/merge -f merge_method=merge`.
 
 Never add Co-Authored-By trailers or "Generated with" lines to commits or
 PR descriptions.
+
+## Tests
+
+- `node --test` (Node 18 or newer, no packages) runs `tests/highlight.test.mjs`,
+  the tokenizer's tests. Change `mods/reviewer/highlight.js` together with a
+  test; the "spans add up to the input" test is the one the panel relies on.
+- `.github/workflows/test.yml` runs it on Node 20 and 22, and runs
+  `scripts/test-uninstall.sh` (when the file exists) on Linux, macOS and
+  Windows, on every pull request and on pushes to `main`. A branch named
+  `ci/**` also runs on push, to try a CI change first.
+- Nothing tests `main.js` or the dialogs; that needs Herdr's window, so it
+  stays a manual try-out in the app. There is no coverage measurement.

@@ -1,0 +1,54 @@
+name: tests
+
+# Runs on every pull request and on pushes to main. Branches named ci/** also
+# run on push, so a CI change can be tried before it has a pull request.
+on:
+  push:
+    branches: [main, "ci/**"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  tokenizer:
+    name: tokenizer (node ${{ matrix.node }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [20, 22]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      # tests/highlight.test.mjs; `node --test` finds every *.test.mjs itself.
+      - run: node --test
+
+  scripts:
+    name: install and uninstall scripts (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      # The scripts call python3; fail early and clearly if a runner lacks it.
+      - name: Check that python3 runs
+        shell: bash
+        run: python3 --version
+      - name: Check the syntax of every script with sh
+        shell: bash
+        run: |
+          for f in scripts/*.sh; do echo "sh -n $f"; sh -n "$f"; done
+      # Uses a throwaway HERDR_APP_HOME and a stub herdr-app, so no Herdr is needed.
+      - name: scripts/test-uninstall.sh
+        if: hashFiles('scripts/test-uninstall.sh') != ''
+        shell: bash
+        run: sh scripts/test-uninstall.sh
