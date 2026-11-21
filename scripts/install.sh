@@ -11,15 +11,22 @@
 # yourself is edited in place. Herdr can't dock a new mod into a shipped
 # layout, which is why this step exists.
 #
-# Usage: scripts/install.sh [--no-layout]   (HERDR_APP_HOME picks another Herdr home)
+# It also installs mods/reviewer-toggle (what ctrl-shift-r opens: it shows or
+# hides Reviewer's block, which a single key command can't do) and adds the
+# repo's keys.json to the person's keys.json: only keys they haven't bound,
+# never replacing one they use.
+#
+# Usage: scripts/install.sh [--no-layout] [--no-keys]   (HERDR_APP_HOME picks another Herdr home)
 set -eu
-layout_step=1
+layout_step=1 keys_step=1
 for arg in "$@"; do
   case $arg in
     --no-layout) layout_step=0 ;;
-    *) echo "usage: scripts/install.sh [--no-layout]" >&2; exit 2 ;;
+    --no-keys) keys_step=0 ;;
+    *) echo "usage: scripts/install.sh [--no-layout] [--no-keys]" >&2; exit 2 ;;
   esac
 done
+repo=$(cd "$(dirname "$0")/.." && pwd)
 src=$(cd "$(dirname "$0")/../mods/reviewer" && pwd)
 home=${HERDR_APP_HOME:-$HOME/.config/herdr-app}
 dest=$home/mods/reviewer
@@ -55,6 +62,49 @@ fi
 mv "$stage/reviewer" "$dest"
 version=$(sed -n 's/.*"version": *"\([^"]*\)".*/\1/p' "$dest/mod.json" | head -n 1)
 echo "reviewer ${version:-?} installed in $dest"
+
+# The key helper: a small overlay mod that toggles Reviewer's block and closes
+# itself. Installed the same way (staged, checked, then swapped in).
+toggle_src=$repo/mods/reviewer-toggle toggle_dest=$home/mods/reviewer-toggle
+if [ -f "$toggle_src/mod.json" ]; then
+  if [ -L "$toggle_dest" ]; then echo "$toggle_dest is a symlink; remove it first" >&2; exit 1; fi
+  mkdir "$stage/reviewer-toggle"
+  cp -R "$toggle_src/." "$stage/reviewer-toggle/"
+  herdr-app check "$stage/reviewer-toggle" || exit 1
+  rm -rf "$toggle_dest"
+  mv "$stage/reviewer-toggle" "$toggle_dest"
+  echo "reviewer-toggle installed in $toggle_dest"
+fi
+
+# Keys: add the repo's keys.json to the person's, section by section. A key
+# they already bind to something else stays theirs and is reported.
+if [ "$keys_step" = 1 ] && [ -f "$repo/keys.json" ]; then
+  if command -v python3 >/dev/null 2>&1; then
+    python3 - "$repo/keys.json" "$home/keys.json" <<'PY2'
+import json, os, sys
+src, dst = sys.argv[1], sys.argv[2]
+with open(src, encoding="utf-8") as f: ours = json.load(f)
+if not os.path.exists(dst):
+    # Without a keys.json Herdr uses its defaults; writing one with only ours could drop them.
+    print("keys: no %s yet, so none were added; open Herdr once, then run this again" % dst)
+    sys.exit(0)
+with open(dst, encoding="utf-8") as f: mine = json.load(f)
+added, kept = [], []
+for section, keys in ours.items():
+    have = mine.setdefault(section, {})
+    for key, action in keys.items():
+        if key not in have: have[key] = action; added.append("%s %s" % (key, action))
+        elif have[key] != action: kept.append("%s (yours: %s)" % (key, json.dumps(have[key])))
+if added:
+    with open(dst + ".reviewer-tmp", "w", encoding="utf-8") as f: json.dump(mine, f, indent=2, ensure_ascii=False); f.write("\n")
+    os.replace(dst + ".reviewer-tmp", dst)
+    print("keys: added " + ", ".join(added))
+for k in kept: print("keys: left %s; bind the Reviewer action from keys.json to another key if you want it" % k)
+PY2
+  else
+    echo "python3 isn't on PATH, so no keys were added; copy the ones in $repo/keys.json into $home/keys.json"
+  fi
+fi
 
 [ "$layout_step" = 1 ] || exit 0
 manual="In your layout, replace the \`changes\` block's mod with \`reviewer\` (see README, Install)."

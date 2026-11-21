@@ -82,7 +82,13 @@ This fork targets herdr-App 0.1.16 and herdr-core (`hc`) 0.1.21. The app uses it
    wider; the terminals beside it narrow as it grows (this step needs
    `python3`; without it the cap stays). Pass `--no-layout` to skip this
    step.
-3. Run the script again after each update or checkout; Herdr reloads the
+3. It also installs `reviewer-toggle`, the small helper `ctrl-shift-r`
+   opens, and adds the keys below to your `keys.json`. It only adds keys
+   you haven't bound; a key you already use stays yours and the script
+   names it, so you can bind that action elsewhere. It needs `python3` and
+   an existing `keys.json` (Herdr writes one on first start). Pass
+   `--no-keys` to skip this step.
+4. Run the script again after each update or checkout; Herdr reloads the
    panel in place. In a layout that already shows `reviewer` it only lifts
    the width cap, if that hasn't been done, and takes out the 480px
    minimum 0.5.1 gave the terminal area, which pushed a wide panel out of
@@ -106,14 +112,32 @@ mod opened as an overlay of itself.
 
 ## Versions
 
-This checkout is based on upstream Reviewer 0.6.0. The mod version is the
+This checkout is based on upstream Reviewer 0.6.0; 0.7.0 adds the keys and
+`reviewer-toggle`, tested with herdr-app 0.1.16 and hc 0.1.21. The mod version is the
 `version` field in `mods/reviewer/mod.json`. When reporting a problem, include
 that version and the output of `herdr-app --version` and `hc --version`.
 
+## Keys
+
+`scripts/install.sh` adds these from the repo's `keys.json`:
+
+| Key | Does |
+|---|---|
+| `ctrl-shift-r` | Open Reviewer in the side panel, or close it when it is shown |
+| `ctrl-shift-enter` | Submit the shown scope's draft comments |
+| `ctrl-shift-a` | Ask the agent about the whole open diff |
+| `ctrl-shift-s` | Cycle Uncommitted, Last commit and vs main |
+
+`ctrl-shift-r` runs `mod.open:reviewer-toggle`. A key runs one command, and
+Reviewer's own commands only reach it while its block is shown, so the
+helper does what the tab bar's Changes button does: select Reviewer's block
+in its stack and show the panel, or hide the panel when Reviewer is
+already shown. It opens as an invisible overlay and closes itself at once.
+The other keys only act while Reviewer is shown.
+
 ## Commands and props
 
-Bind these in `keys.json` if you want keys for them (none are bound by
-default):
+Bind these in `keys.json` to change the keys above or add more:
 
 | Command | Does |
 |---|---|
@@ -122,6 +146,7 @@ default):
 | `reviewer.clear` | Discard the shown scope's drafts |
 | `reviewer.scope` | Cycle Uncommitted, Last commit and vs main |
 | `reviewer.full` | Show or fold the unchanged lines (*Full file*) |
+| `mod.open:reviewer-toggle` | Show or hide Reviewer (an app command) |
 
 Block props: `palette` (`one-dark-pro`, `dark-plus` or `theme`),
 `font_size` (overrides the diff's size), `base` (the branch *vs main*

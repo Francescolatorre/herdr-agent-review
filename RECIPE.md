@@ -249,6 +249,20 @@ fill, `foreground` text at 13px. Top to bottom:
 - Key commands: `reviewer.submit`, `reviewer.ask`,
   `reviewer.clear` (discard drafts), `reviewer.scope` (next
   scope), `reviewer.full` (Full file on or off). They reach shown copies only.
+- Because of that, showing Reviewer from a key needs a second mod,
+  `reviewer-toggle` (`{ "place": "none", "overlay": { "width": 1, "height": 1 } }`),
+  bound as `mod.open:reviewer-toggle`. Its constructor finds the layout node
+  whose `content.mod` is `reviewer` and its path from the root. If no
+  ancestor is hidden and its stack's `active` is that block, it runs
+  `layout.hide` on the stack's parent (`panel` in `main`); otherwise
+  `layout.select { stack, child }` and `layout.show` on each hidden
+  ancestor. Then `closeOverlay(props().overlay)`. Without `props().overlay`
+  (as under `herdr-app check`) it does nothing.
+- The repo's `keys.json` binds `ctrl-shift-r` to that, and
+  `ctrl-shift-enter`, `ctrl-shift-a` and `ctrl-shift-s` to `reviewer.submit`,
+  `reviewer.ask` and `reviewer.scope`. `scripts/install.sh` merges it into
+  the person's `keys.json` only where a key is unbound, never creates that
+  file, and names each key it left alone.
 - Another mod opens a file's diff by setting shared `reviewer.open` to
   `{ id, at: Date.now(), path, on, ref? }` (an absolute path on machine `on`,
   null for local; the repo folder itself selects no file). With `ref`
