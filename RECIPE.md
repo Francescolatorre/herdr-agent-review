@@ -262,7 +262,17 @@ fill, `foreground` text at 13px. Top to bottom:
   `ctrl-shift-enter`, `ctrl-shift-a` and `ctrl-shift-s` to `reviewer.submit`,
   `reviewer.ask` and `reviewer.scope`. `scripts/install.sh` merges it into
   the person's `keys.json` only where a key is unbound, never creates that
-  file, and names each key it left alone.
+  file, and names each key it left alone. `scripts/uninstall.sh` reverses it:
+  it removes every binding whose action is `reviewer.*` or
+  `mod.open:reviewer-toggle` (whichever key), never deletes a layout (Herdr has
+  no command for it; a `<name>-reviewer` clone is switched away from and
+  renamed `<name>.json.uninstalled` and put back as it was by the next
+  `scripts/install.sh` instead of cloning again, another layout's `reviewer`
+  block goes back to `changes`), then removes both mod folders; it needs
+  Herdr open only
+  for the layout step, and has `--dry-run`, `--no-layout` and `--no-keys`.
+  `scripts/test-uninstall.sh` exercises both scripts against a throwaway home
+  and a stub `herdr-app`.
 - Another mod opens a file's diff by setting shared `reviewer.open` to
   `{ id, at: Date.now(), path, on, ref? }` (an absolute path on machine `on`,
   null for local; the repo folder itself selects no file). With `ref`

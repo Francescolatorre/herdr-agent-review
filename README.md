@@ -110,10 +110,41 @@ The mod runs `git` and `hc` (Herdr's terminal core) and reads files under
 the repo it shows. It needs nothing else installed: the send dialog is the
 mod opened as an overlay of itself.
 
+## Uninstall
+
+Run `scripts/uninstall.sh` from the checkout. It undoes the installer in this
+order, and `--dry-run` shows what it would do without changing anything:
+
+1. **Layouts** (needs Herdr open). A `<name>-reviewer` clone the installer made
+   is never deleted, since you may have changed it: Herdr is switched back to
+   the layout it was cloned from and the clone is set aside as
+   `<name>.json.uninstalled` (Herdr can't delete a layout). Running
+   `scripts/install.sh` again puts that file back as it was instead of
+   cloning anew, so a layout you edited by hand survives. In a layout of your
+   own, the `reviewer` block goes back to `changes`. With Herdr closed the layouts are left alone and the script
+   tells you to run it again.
+2. **Keys.** Every binding to a Reviewer action (`reviewer.*`,
+   `mod.open:reviewer-toggle`) is removed, whichever key it is on. Other keys
+   stay. It needs `python3`; without it the script names what to remove by hand.
+3. **Mods.** `mods/reviewer`, `mods/reviewer-toggle` and a leftover install
+   stage.
+
+`--no-layout` and `--no-keys` skip a step. If you skip the keys, `ctrl-shift-r`
+stays bound to a mod that is gone. Drafts, the scope and *Full file* live in
+Herdr's `shared.json` (`reviewer.*`) and stay, so installing again finds them.
+The panel width limit the installer raised is not restored.
+
+`scripts/test-uninstall.sh` runs install and uninstall against a throwaway
+home and a stub `herdr-app`; it needs no Herdr and never touches yours.
+
 ## Versions
 
 This checkout is based on upstream Reviewer 0.6.0; 0.7.0 adds the keys and
-`reviewer-toggle`, tested with herdr-app 0.1.16 and hc 0.1.21. The mod version is the
+`reviewer-toggle`, 0.8.0 adds `scripts/uninstall.sh`, tested with herdr-app
+0.1.16 and hc 0.1.21. The install and uninstall scripts' file logic is covered
+by `scripts/test-uninstall.sh`, which passed on Windows (Git Bash) and on
+GitHub's Ubuntu, macOS and Windows runners. Trying the scripts against a real
+Herdr has only been done on Windows; macOS and Linux still need that. The mod version is the
 `version` field in `mods/reviewer/mod.json`. When reporting a problem, include
 that version and the output of `herdr-app --version` and `hc --version`.
 
