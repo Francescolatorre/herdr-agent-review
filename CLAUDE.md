@@ -23,9 +23,10 @@ keys), in the same commit or PR:
    recipe is what users get.
 5. If you touched `scripts/install.sh` or `scripts/uninstall.sh`, run
    `scripts/test-uninstall.sh` (throwaway home, stub `herdr-app`, needs no
-   Herdr) and say in the README's Versions section on which systems it ran.
-   It is only tested on Windows (Git Bash) so far; macOS and Linux need a
-   run by someone on that system.
+   Herdr) and say in the README's Versions section where it ran. CI
+   (`.github/workflows/test.yml`) runs it on Linux, macOS and Windows; trying
+   the scripts against a real Herdr is only done on Windows so far, so macOS
+   and Linux need a run by someone on that system.
 
 After it lands on main, tag the commit that set the version (not the merge
 commit):

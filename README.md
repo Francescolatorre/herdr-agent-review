@@ -141,9 +141,10 @@ home and a stub `herdr-app`; it needs no Herdr and never touches yours.
 
 This checkout is based on upstream Reviewer 0.6.0; 0.7.0 adds the keys and
 `reviewer-toggle`, 0.8.0 adds `scripts/uninstall.sh`, tested with herdr-app
-0.1.16 and hc 0.1.21. The uninstaller's file logic is covered by
-`scripts/test-uninstall.sh` on Windows (Git Bash); it has not been run on macOS
-or Linux yet. The mod version is the
+0.1.16 and hc 0.1.21. The install and uninstall scripts' file logic is covered
+by `scripts/test-uninstall.sh`, which passed on Windows (Git Bash) and on
+GitHub's Ubuntu, macOS and Windows runners. Trying the scripts against a real
+Herdr has only been done on Windows; macOS and Linux still need that. The mod version is the
 `version` field in `mods/reviewer/mod.json`. When reporting a problem, include
 that version and the output of `herdr-app --version` and `hc --version`.
 
