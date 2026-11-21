@@ -34,7 +34,8 @@
 // its own; "reviewer.scope" cycles the first three.
 // Props: { palette: "one-dark-pro" | "theme" | "dark-plus" (default: one-dark-pro),
 //          font_size: px (default: the terminal's font size minus one),
-//          base: the branch reviews are against (default: origin/HEAD, else main, else master) }.
+//          base: the branch reviews are against (default: origin/HEAD, else main, else master),
+//          update_check: true to be told once a day, by a toast, when a newer release exists (default: off) }.
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input, TextareaState, Textarea, Scrollbar, v_virtual_list, VirtualListScrollHandle, Popover } from "gpui-base";
 import { spaces, panes, focused, exec, readTextFile, watchFolder, theme, settings, nextCommand, props, shared, setShared } from "herdr";
@@ -42,6 +43,7 @@ import { tokenize, languageOf } from "./highlight.js";
 import { ask } from "./ask.js";
 import { palette } from "./palette.js";
 import { Dialog } from "./dialog.js";
+import { checkForUpdate } from "./update.js";
 
 function location() {
   const space = spaces().find((s) => s.active), f = focused();
@@ -154,6 +156,7 @@ export default class Changes extends View {
     this.note.on("submit", (e, cx) => { if (!e?.shift) this.addComment(cx); });
     this.note.on("change", (_e, cx) => { this.noteText = this.note.value(); if (this.composer?.editing) this.rebuild(); cx.notify(); });
     this.noteText = "";
+    checkForUpdate({ enabled: props()?.update_check === true }).catch(() => {});
     this.refresh(cx);
     cx.timer.every(10000, (cx) => this.refresh(cx));
     cx.spawn(async (cx) => {

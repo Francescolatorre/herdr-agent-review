@@ -197,7 +197,26 @@ Bind these in `keys.json` to change the keys above or add more:
 
 Block props: `palette` (`one-dark-pro`, `dark-plus` or `theme`),
 `font_size` (overrides the diff's size), `base` (the branch *vs main*
-compares against; default `origin/HEAD`, else `main`, else `master`).
+compares against; default `origin/HEAD`, else `main`, else `master`),
+`update_check` (`true` to turn on the update hint, see Updates; default off).
+
+## Updates
+
+`scripts/check-update.sh` asks GitHub for the latest release and compares it with
+the version installed in Herdr (`mods/reviewer/mod.json` in the Herdr home). It
+only reads: nothing is downloaded or changed. When a newer release exists it says
+so, with the page to get it from, and exits 10; to update, download the zip,
+check its `.sha256`, unpack it and run `scripts/install.sh`.
+
+The mod can tell you too, but only if you ask: set `"update_check": true` in the
+props of Reviewer's block in your layout. Then, at most once a day, it looks and
+shows one toast per new release. Either way the only thing sent is one request to
+`api.github.com`, so GitHub sees your IP address; nothing is installed for you.
+
+If GitHub can't be reached (offline, a firewall, VPN or proxy in the way, a
+certificate or rate-limit error, a login page), nothing breaks: the script says so
+and exits 3 within about 20 seconds, and the mod stays silent and tries again the
+next day.
 
 ## Open a file from another mod
 
