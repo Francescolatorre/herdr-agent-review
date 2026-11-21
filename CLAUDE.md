@@ -7,7 +7,7 @@ manager, so the version has to live in the files themselves.
 ## Releasing
 
 The version is the `version` field in `mods/reviewer/mod.json`. Each release
-is an annotated tag `v<version>` on master pointing at the commit that set
+is an annotated tag `v<version>` on main pointing at the commit that set
 that field.
 
 For every change a user would notice (behaviour, command names, props,
@@ -22,11 +22,11 @@ keys), in the same commit or PR:
 4. Keep `RECIPE.md` in step with the code; on a mismatched Herdr version the
    recipe is what users get.
 
-After it lands on master:
+After it lands on main:
 
 ```
 git tag -a v<version> -m "reviewer <version>"
-git push origin master v<version>
+git push origin main v<version>
 ```
 
 Patch for fixes, minor for new behaviour. No changelog until a release
