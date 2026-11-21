@@ -42,10 +42,10 @@ git push origin v<version>
 - Both act on the real Herdr home (`~/.config/herdr-app`, or
   `$HERDR_APP_HOME`) and on the layout of the open window. Before running them
   there, copy `keys.json`, `layouts/` and `mods/reviewer*` somewhere safe.
-- An install → uninstall → install round trip does not bring back a
-  `<name>-reviewer` layout you edited by hand: the uninstaller sets it aside as
-  `<name>.json.uninstalled` and the installer makes a fresh clone. Copy the
-  aside file back to restore it.
+- An install → uninstall → install round trip keeps a `<name>-reviewer`
+  layout you edited by hand: the uninstaller sets it aside as
+  `<name>.json.uninstalled` and the next install puts it back instead of
+  cloning anew. Still back it up first when you test on the real home.
 - `scripts/test-uninstall.sh` never touches the real home; prefer it for
   everything the stub can cover and keep the real-app run for the UI.
 

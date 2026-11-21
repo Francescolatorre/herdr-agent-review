@@ -118,9 +118,10 @@ order, and `--dry-run` shows what it would do without changing anything:
 1. **Layouts** (needs Herdr open). A `<name>-reviewer` clone the installer made
    is never deleted, since you may have changed it: Herdr is switched back to
    the layout it was cloned from and the clone is set aside as
-   `<name>.json.uninstalled` (Herdr can't delete a layout, so rename it back
-   to restore it). In a layout of your own, the `reviewer` block goes back to
-   `changes`. With Herdr closed the layouts are left alone and the script
+   `<name>.json.uninstalled` (Herdr can't delete a layout). Running
+   `scripts/install.sh` again puts that file back as it was instead of
+   cloning anew, so a layout you edited by hand survives. In a layout of your
+   own, the `reviewer` block goes back to `changes`. With Herdr closed the layouts are left alone and the script
    tells you to run it again.
 2. **Keys.** Every binding to a Reviewer action (`reviewer.*`,
    `mod.open:reviewer-toggle`) is removed, whichever key it is on. Other keys

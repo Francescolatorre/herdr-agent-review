@@ -92,6 +92,27 @@ check "a second run exits 0" test "$rc" = 0
 check "a second run says so" grep -q 'not installed' "$work/out2"
 "$repo/scripts/install.sh" >/dev/null 2>&1; check "install works again afterwards" test -f "$HERDR_APP_HOME/mods/reviewer/mod.json"
 
+echo "a hand-edited clone comes back after uninstall and install"
+new_home keep main
+"$repo/scripts/install.sh" >/dev/null 2>&1
+python3 - "$HERDR_APP_HOME/layouts/main-reviewer.json" <<'PY'
+import json, sys
+p = sys.argv[1]; t = json.load(open(p, encoding="utf-8"))
+t["note"] = "edited by hand"
+json.dump(t, open(p, "w", encoding="utf-8"), indent=2)
+PY
+cp "$HERDR_APP_HOME/layouts/main-reviewer.json" "$work/clone.before"
+"$repo/scripts/uninstall.sh" >/dev/null 2>&1
+"$repo/scripts/install.sh" > "$work/out" 2>&1; rc=$?
+check "install exits 0" test "$rc" = 0
+check "the clone is back exactly as it was" cmp -s "$work/clone.before" "$HERDR_APP_HOME/layouts/main-reviewer.json"
+absent "nothing is left aside" sh -c "ls '$HERDR_APP_HOME'/layouts/*.uninstalled*"
+check "Herdr was switched to the clone" test "$(cat "$HERDR_APP_HOME/.stub-layout")" = main-reviewer
+check "it says it restored it" grep -q 'restored the one' "$work/out"
+"$repo/scripts/uninstall.sh" >/dev/null 2>&1; "$repo/scripts/uninstall.sh" >/dev/null 2>&1
+"$repo/scripts/install.sh" >/dev/null 2>&1
+check "uninstall twice in a row does not lose the clone" test -f "$HERDR_APP_HOME/layouts/main-reviewer.json"
+
 echo "dry run changes nothing"
 new_home dry main
 "$repo/scripts/install.sh" >/dev/null 2>&1

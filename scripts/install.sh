@@ -9,7 +9,9 @@
 # Herdr's own layouts are read-only, so a shipped one (say `main`) is first
 # cloned as `<name>-reviewer`, which Herdr switches to; a layout you cloned
 # yourself is edited in place. Herdr can't dock a new mod into a shipped
-# layout, which is why this step exists.
+# layout, which is why this step exists. A clone that scripts/uninstall.sh set
+# aside (`<name>-reviewer.json.uninstalled`) is put back instead of cloning
+# again, so a layout you edited by hand survives an uninstall and install.
 #
 # It also installs mods/reviewer-toggle (what ctrl-shift-r opens: it shows or
 # hides Reviewer's block, which a single key command can't do) and adds the
@@ -168,6 +170,23 @@ case "$shown" in
     clone=$shown-reviewer
     if [ -f "$home/layouts/$clone.json" ]; then
       echo "layout $clone already exists; switch to it with: herdr-app do layout.switch '{\"name\":\"$clone\"}'"
+      exit 0
+    fi
+    # A clone scripts/uninstall.sh set aside comes back as it was, so what you
+    # changed in it isn't lost (the newest one, if there are several).
+    aside=
+    for f in "$home/layouts/$clone.json.uninstalled" "$home/layouts/$clone.json.uninstalled."*; do
+      if [ -f "$f" ]; then aside=$f; fi
+    done
+    if [ -n "$aside" ]; then
+      mv "$aside" "$home/layouts/$clone.json"
+      echo "layout $clone: restored the one scripts/uninstall.sh set aside ($(basename "$aside"))"
+      if herdr-app do layout.switch "{\"name\":\"$clone\"}" >/dev/null; then
+        echo "layout: switched to $clone"
+      else
+        echo "could not switch to $clone; do it with: herdr-app do layout.switch '{\"name\":\"$clone\"}'" >&2
+      fi
+      widen "$home/layouts/$clone.json"
       exit 0
     fi
     herdr-app do layout.clone "{\"name\":\"$shown\",\"as\":\"$clone\"}" >/dev/null

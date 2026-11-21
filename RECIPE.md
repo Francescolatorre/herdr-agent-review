@@ -266,8 +266,10 @@ fill, `foreground` text at 13px. Top to bottom:
   it removes every binding whose action is `reviewer.*` or
   `mod.open:reviewer-toggle` (whichever key), never deletes a layout (Herdr has
   no command for it; a `<name>-reviewer` clone is switched away from and
-  renamed `<name>.json.uninstalled`, another layout's `reviewer` block goes
-  back to `changes`), then removes both mod folders; it needs Herdr open only
+  renamed `<name>.json.uninstalled` and put back as it was by the next
+  `scripts/install.sh` instead of cloning again, another layout's `reviewer`
+  block goes back to `changes`), then removes both mod folders; it needs
+  Herdr open only
   for the layout step, and has `--dry-run`, `--no-layout` and `--no-keys`.
   `scripts/test-uninstall.sh` exercises both scripts against a throwaway home
   and a stub `herdr-app`.
