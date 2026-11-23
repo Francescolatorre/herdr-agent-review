@@ -38,6 +38,14 @@ in [LICENSE](LICENSE); see [Versions](#versions) for how its releases are counte
   whole file. Drafts from Changes and All files go into the same review.
   In a working-tree comparison, **.gitignored-files** includes ignored
   files on demand. A single-commit review reads that commit's files.
+- **Markdown files** (`.md`, `.markdown`) with no change open as a document:
+  frontmatter, headings, paragraphs, lists, tables and code blocks each
+  appear as a block with its line range, and **Comment** on a block comments
+  on those lines. A Mermaid fence shows as source for now. A changed Markdown
+  file opens as its diff; **Preview** and **Source** switch between the two.
+  A block comment is an ordinary line comment: it shows under its lines in
+  the source view too, and goes into the same review. Files that split into
+  more than 500 blocks open as text only.
 - **Folders outside Git** open directly in All files. Expand folders to
   browse them and review files just as you would in a worktree.
 - **Open in editor** opens a working copy in a new Herdr terminal on its

@@ -37,13 +37,14 @@
 //          base: the branch reviews are against (default: origin/HEAD, else main, else master),
 //          update_check: true to be told once a day, by a toast, when a newer release exists (default: off) }.
 import { View, div, svg } from "gpui-kit";
-import { v_flex, h_flex, InputState, Input, TextareaState, Textarea, Scrollbar, v_virtual_list, VirtualListScrollHandle, Popover, v_resizable, resizable_panel } from "gpui-base";
+import { v_flex, h_flex, TextView, InputState, Input, TextareaState, Textarea, Scrollbar, v_virtual_list, VirtualListScrollHandle, Popover, v_resizable, resizable_panel } from "gpui-base";
 import { spaces, panes, focused, exec, readTextFile, watchFolder, theme, settings, nextCommand, props, shared, setShared } from "herdr";
 import { tokenize, languageOf } from "./highlight.js";
 import { ask } from "./ask.js";
 import { palette } from "./palette.js";
 import { Dialog } from "./dialog.js";
 import { buildTree, visibleRows, gitInventory, fileLines } from "./files.js";
+import { documentBlocks, isMarkdown, MAX_BLOCKS } from "./markdown.js";
 import { directory, openEditor } from "./workspace.js";
 import { log } from "./log.js";
 import { shortcutsPanel } from "./shortcuts.js";
@@ -142,7 +143,7 @@ export default class Changes extends View {
   init(_props, cx) {
     // Opened as the send dialog (ask.js): this copy is the dialog, nothing else.
     if (props()?.dialog) { this.dialog = Object.create(Dialog.prototype); this.dialog.init(_props, cx); return; }
-    this.maximized = false; this.allFiles = false; this.plain = false; this.expanded = new Set();
+    this.maximized = false; this.allFiles = false; this.plain = false; this.expanded = new Set(); this.doc = null; this.docView = new Map();
     this.tree = buildTree([], []); this.treeRows = []; this.workingView = false;
     if (!checking()) this.registerPanel();
     log("ready");
@@ -332,7 +333,7 @@ export default class Changes extends View {
       this.tree = buildTree([], []); this.treeRows = []; this.hasHead = false;
       this.folderWatch?.cancel();
       this.folderWatch = null;
-      this.context = context; this.root = null; this.log = null; this.choosingScope = false; this.files = []; this.open = null; this.comments = []; this.composer = null;
+      this.context = context; this.doc = null; this.docView = new Map(); this.root = null; this.log = null; this.choosingScope = false; this.files = []; this.open = null; this.comments = []; this.composer = null;
       this.setLines([]); this.message = ""; this.input.set_value(""); this.error = null; this.note_ = null; this.gitNote = null; this.watched = null; this.closed = false; this.limited = false;
     }
     if (!cwd) return;
@@ -590,7 +591,7 @@ export default class Changes extends View {
     if (!file) return;
     const scope = this.scopeId(), range = this.range, ticket = Symbol();
     this.loadTicket = ticket;
-    let lines;
+    let lines, source = null;
     if (!file.status) {
       let text;
       if (this.scope === "commit") {
@@ -599,6 +600,7 @@ export default class Changes extends View {
         text = r.stdout;
       } else text = await readTextFile(`${root}/${path}`, { on });
       lines = fileLines(text);
+      source = text;
     } else if (file.fresh || (!this.hasHead && file.status === "A")) {
       const text = await readTextFile(`${root}/${path}`, { on }).catch(() => null);
       if (text === null) lines = ["Cannot preview this file (binary, too large, or unreadable)"];
@@ -621,8 +623,84 @@ export default class Changes extends View {
         if (typeof text === "string") lines = fillGaps(lines, text);
       }
     }
+    if (isMarkdown(path) && file.status !== "D" && source === null) source = await this.documentText(path, file, range);
     if (file.status && lines.length > (lines.some((l) => l[0] === "=") ? FILE_LINES + DIFF_LINES : DIFF_LINES)) lines = lines.slice(0, DIFF_LINES);
     if (this.loadTicket === ticket && key() === context && this.open === path && scope === this.scopeId() && range === this.range) this.setLines(lines.map(line => line.length > 4000 ? line.slice(0, 4000) + "… (line truncated)" : line), path);
+    if (this.loadTicket === ticket && key() === context && this.open === path && scope === this.scopeId() && range === this.range) this.doc = isMarkdown(path) && typeof source === "string" && source.length <= 400000 ? this.splitDocument(path, source) : null;
+  }
+
+  // The text of a changed Markdown file for the document view: the picked commit's
+  // blob, else the working tree. An unchanged file's text is already in hand.
+  async documentText(path, file, range) {
+    const commit = range.length === 2 ? range[1] : null;
+    if (commit) {
+      const r = await exec("git", [...READ, "show", `${commit}:${path}`], { cwd: this.root, on: this.on }).catch(() => null);
+      return r?.code === 0 ? r.stdout : null;
+    }
+    return readTextFile(`${this.root}/${path}`, { on: this.on }).catch(() => null);
+  }
+
+  splitDocument(path, text) {
+    if (text.includes("\0")) return null;
+    const blocks = documentBlocks(text);
+    return blocks.length && blocks.length <= MAX_BLOCKS ? { path, blocks } : null;
+  }
+
+  // A Markdown file opens as a document when it has no change to show, as its diff
+  // otherwise; the "Preview"/"Source" link switches, remembered per file.
+  documentShown() {
+    if (!this.open || this.doc?.path !== this.open) return false;
+    return this.docView.get(this.open) ?? !this.lookup(this.open)?.status;
+  }
+
+  toggleDocument(cx) {
+    if (!this.open) return;
+    this.docView.set(this.open, !this.documentShown());
+    if (this.composer) this.closeComposer(cx);
+    this.rebuild(); cx.notify();
+  }
+
+  // Comment on a whole block: an ordinary line comment on the block's lines, with the same
+  // quote the source view would give, so it shows in both views and is sent the same way.
+  commentBlock(block, cx) {
+    const lines = block.text.split("\n");
+    const from = { kind: " ", number: block.start, text: lines[0] }, to = { kind: " ", number: block.end, text: lines[lines.length - 1] };
+    const c = this.composer;
+    if (c?.doc && !c.editing && c.path === this.open && c.from.number === from.number && c.to.number === to.number && !this.noteText.trim()) { this.closeComposer(cx); return; }
+    const quote = lines.slice(0, 60).map((l, i) => `${String(block.start + i).padStart(5)}   ${l}`).join("\n");
+    this.composer = { path: this.open, from, to, editing: null, doc: true, quote };
+    this.openBox(cx);
+  }
+
+  documentView(t) {
+    const blocks = this.doc.blocks, mine = this.comments.filter((c) => c.path === this.open);
+    // Each comment sits under the block its last line belongs to (the last one starting before it, for a gap).
+    const under = new Map(), top = [];
+    for (const c of mine) {
+      if (c.whole) { top.push(c); continue; }
+      let at = 0;
+      for (let i = 0; i < blocks.length; i++) if (blocks[i].start <= (c.to?.number ?? 0)) at = i;
+      (under.get(at) ?? under.set(at, []).get(at)).push(c);
+    }
+    const editing = this.composer?.editing ?? null, open = this.composer?.doc && this.composer.path === this.open ? this.composer : null;
+    const card = (c) => div().id(`doc-comment-${c.id}`).px(8).py(6).rounded(6).bg(t.raised).border_l(2).border_color(t.accent).text_size(12).whitespace_normal().cursor_pointer()
+      .hover((s) => s.bg(t.hover)).on_click((_e, cx) => { if (c.id !== this.composer?.editing) this.editComment(c.id, cx); })
+      .child(c.id === editing ? this.noteText : c.text);
+    const link = (id, label, action) => div().id(id).h(22).px(8).flex().items_center().rounded(6).text_size(11).text_color(t.dim).cursor_pointer().hover((s) => s.bg(t.hover).text_color(t.foreground)).on_click(action).child(label);
+    return v_flex().id("reviewer-document").size_full().min_h(0).overflow_y_scrollbar().p(10).gap(8)
+      .children(top.map(card))
+      .children(blocks.map((block, i) => {
+        const id = `doc-${block.start}`, active = open && open.from.number === block.start && open.to.number === block.end;
+        const where = block.start === block.end ? `Line ${block.start}` : `Lines ${block.start}–${block.end}`;
+        const label = block.kind === "metadata" ? `Frontmatter · ${where.toLowerCase()}` : block.kind === "mermaid" ? `Mermaid source · ${where.toLowerCase()}` : where;
+        const body = block.kind === "metadata" ? "~~~yaml\n" + block.body + "\n~~~" : block.text;
+        return v_flex().id(id).flex_none().gap(6).p(8).rounded(7).border_1().border_color(active ? t.accent : t.border)
+          .child(h_flex().items_center().gap(6)
+            .child(div().flex_1().min_w(0).text_size(11).text_color(t.dim).child(label))
+            .child(link(`${id}-comment`, "Comment", (_e, cx) => this.commentBlock(block, cx))))
+          .child(TextView.markdown(id + "-text", body))
+          .children((under.get(i) ?? []).map(card));
+      }));
   }
 
   setLines(lines, path) {
@@ -749,7 +827,7 @@ export default class Changes extends View {
   editComment(id, cx) {
     const c = this.comments.find((c) => c.id === id);
     if (!c) return;
-    this.composer = c.whole ? { path: c.path, whole: true, editing: id } : { path: c.path, from: c.from, to: c.to, editing: id };
+    this.composer = c.whole ? { path: c.path, whole: true, editing: id } : { path: c.path, from: c.from, to: c.to, editing: id, doc: this.documentShown() };
     this.note.set_value(c.text); this.noteText = c.text;
     this.openBox(cx);
   }
@@ -775,6 +853,7 @@ export default class Changes extends View {
     const t = this.target();
     if (t) { comment.from = desc(this.rows[t.from]); comment.to = desc(this.rows[t.to]); comment.quote = this.quote(this.rows.slice(t.from, Math.min(t.to, t.from + 60) + 1)); }
     else if (c.editing) { const old = this.comments.find((x) => x.id === c.editing); if (old?.quote) comment.quote = old.quote; }
+    else if (c.quote) comment.quote = c.quote;
     list.push(comment);
     this.setComments(list);
     this.closeComposer(cx);
@@ -929,8 +1008,8 @@ export default class Changes extends View {
   // `docked`: a strip under the diff (narrow panel) instead of a 300px card over its top-right.
   box(t, target, docked) {
     const c = this.composer, editing = Boolean(c.editing);
-    const where = c.whole ? `whole file (${this.describe(c.path)})` : target ? (target.from === target.to ? `line ${this.rows[target.from].number ?? ""}` : `lines ${this.rows[target.from].number}–${this.rows[target.to].number}`) : "those lines are no longer in the diff";
-    const hint = [c.whole ? "Click a line to comment on lines instead." : editing ? "" : "Click a line to widen the range; click a highlighted line to clear it.", "Enter adds, shift-enter starts a new line, Esc cancels."].filter(Boolean).join("\n");
+    const where = c.doc ? (c.from.number === c.to.number ? `line ${c.from.number}` : `lines ${c.from.number}–${c.to.number}`) : c.whole ? `whole file (${this.describe(c.path)})` : target ? (target.from === target.to ? `line ${this.rows[target.from].number ?? ""}` : `lines ${this.rows[target.from].number}–${this.rows[target.to].number}`) : "those lines are no longer in the diff";
+    const hint = [c.whole ? "Click a line to comment on lines instead." : c.doc ? "Press Comment on another block to comment there." : editing ? "" : "Click a line to widen the range; click a highlighted line to clear it.", "Enter adds, shift-enter starts a new line, Esc cancels."].filter(Boolean).join("\n");
     // Every press inside the box stops here: the box floats over the list, and a click that
     // fell through to the row underneath would reopen the box the moment Add closed it.
     const stop = (action) => (e, cx) => { cx.stop_propagation(); action(e, cx); };
@@ -1049,7 +1128,7 @@ export default class Changes extends View {
     const listLength = this.allFiles ? this.treeRows.length : this.files.length;
     const initialListHeight = Math.min(200, this.allFiles ? Math.max(32, listLength * 26) : Math.max(44, listLength * 28 + 12));
     const restoreLabel = this.allFiles ? "Show tree" : "Show files";
-    const preview = h_flex().flex_1().min_h(0).items_stretch()
+    const diffPreview = h_flex().flex_1().min_h(0).items_stretch()
         .child(div().flex_1().min_w(0).min_h(0).relative().font_family(codeFont()).text_size(this.fontSize)
         .child(div().id("changes-diff-x").size_full().overflow_x_scrollbar()
           .child(div().w_full().min_w(this.diffWidth).h_full().child(v_virtual_list("changes-diff", this.items.length, this.sizes.length ? this.sizes : this.row, (i) => this.items[i].key,
@@ -1061,6 +1140,10 @@ export default class Changes extends View {
         .when(canAsk && !this.composer && n === 0, (e) => e.child(div().absolute().bottom(6).right(14).px(8).py(3).rounded(6).bg(t.raised + "e0").text_size(10).text_color(t.dim).child("Click a line to comment · right-click to ask"))))
         // The comment box, a card floating over the top-right of the diff while it is open (a strip below it on a narrow panel).
         .when(Boolean(this.composer) && !this.narrow(), (e) => e.child(this.box(t, target, false)));
+    // A Markdown file read as a document: its blocks, each with its comments.
+    const preview = !this.documentShown() ? diffPreview : h_flex().flex_1().min_h(0).items_stretch()
+      .child(div().flex_1().min_w(0).min_h(0).relative().child(this.documentView(t)))
+      .when(Boolean(this.composer) && !this.narrow(), (e) => e.child(this.box(t, target, false)));
     return v_flex().id("changes").size_full().min_h(0).relative().rounded(10).overflow_hidden().bg(t.background).border_1().border_color(t.border).text_color(t.foreground).text_size(13).track_focus(this.handle)
       .on_size_change((size, cx) => { const w = this.size?.width; this.size = size; if (w !== size.width) { this.rebuild(); cx.notify(); } })
       .on_key_down((e, cx) => {
@@ -1091,6 +1174,7 @@ export default class Changes extends View {
       .when(Boolean(this.root), e => e.child(h_flex().flex_none().h(30).px(6).gap(2).items_center()
         .when(!this.plain, el => el.child(link("switch-view", this.allFiles ? "Changes" : "All files", (_e, cx) => this.toggleBrowser(cx))))
         .when(this.allFiles && !this.plain && this.scope !== "commit", el => el.child(link("ignored-files", (this.ignored ? "☑ " : "☐ ") + ".gitignored-files", (_e, cx) => this.toggleBrowser(cx, true))))
+        .when(Boolean(this.open) && isMarkdown(this.open) && this.doc?.path === this.open, el => el.child(link("doc-toggle", this.documentShown() ? "Source" : "Preview", (_e, cx) => this.toggleDocument(cx)).tooltip(this.documentShown() ? "Show the file as text, with its line numbers" : "Read the file as a document, comment block by block")))
         .when(this.allFiles && Boolean(this.open), el => el.child(link("whole-file", "Comment", (_e, cx) => this.commentFile(this.open, cx))))
         .when(this.canEdit(), el => el.child(link("edit-file", "Open in editor", (_e, cx) => this.editFile(cx))))))
       .when(this.allFiles && !this.treeRows.length && !this.error, el => el.child(div().px(12).text_color(t.dim).child(this.loading ? "Loading files…" : "No files")))

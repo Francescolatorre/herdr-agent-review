@@ -85,7 +85,7 @@ test("review follows the focused folder and preserves the quoted snapshot", asyn
   const hostModules = {
     herdr: "appHome spaces panes focused exec readTextFile watchFolder theme settings nextCommand props shared setShared checking layout run window notify openOverlay agents knownAgents hc closeOverlay keys",
     "gpui-kit": "View div svg",
-    "gpui-base": "v_flex h_flex InputState Input TextareaState Textarea Scrollbar v_virtual_list VirtualListScrollHandle Popover v_resizable resizable_panel"
+    "gpui-base": "v_flex h_flex TextView InputState Input TextareaState Textarea Scrollbar v_virtual_list VirtualListScrollHandle Popover v_resizable resizable_panel"
   };
   // Register a loader in this test process using the Node 20/22 API.
   const loader = `
@@ -128,6 +128,25 @@ test("review follows the focused folder and preserves the quoted snapshot", asyn
   cwd = ordinary; panel.refresh(cx); await done();
   assert(panel.plain); assert(panel.lookup("note.txt")); assert.equal(panel.comments.length, 0);
   await comment("note.txt", 0, 0, "note"); assert(panel.canEdit());
+  // A Markdown file opens as a document; a comment on a block is an ordinary line comment.
+  writeFileSync(join(ordinary, "plan.md"), ["---", "title: Plan", "---", "", "# Goal", "Ship it.", "", "```mermaid", "flowchart LR", " A --> B", "```", ""].join("\n"));
+  panel.refresh(cx); await done();
+  panel.open = "plan.md"; await panel.load("plan.md", panel.context);
+  assert.deepEqual(panel.doc.blocks.map(b => [b.kind, b.start, b.end]), [["metadata", 1, 3], ["markdown", 5, 6], ["mermaid", 8, 11]]);
+  assert(panel.documentShown(), "an unchanged Markdown file opens as a document");
+  panel.commentBlock(panel.doc.blocks[1], cx);
+  assert.equal(panel.composer.doc, true);
+  panel.note.set_value("name the goal"); panel.addComment(cx);
+  const block = panel.comments.find(c => c.path === "plan.md");
+  assert.deepEqual([block.from.number, block.to.number], [5, 6]);
+  panel.toggleDocument(cx);
+  assert(!panel.documentShown());
+  assert(panel.items.some(it => it.kind === "comment"), "the block comment shows under its lines in the source view");
+  panel.toggleDocument(cx);
+  panel.submit(cx); await done();
+  assert(sent.includes("### plan.md, lines 5-6\n    5   # Goal\n    6   Ship it.\n\nComment: name the goal"), sent);
+  panel.finishSubmission(panel.submission.sent, false, cx);
+  panel.setComments([], cx);
   const { openEditor } = await import("../mods/reviewer/workspace.js");
   const filename = "my 'notes' ü.txt";
   openEditor(ordinary, filename, "space", null);
