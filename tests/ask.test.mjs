@@ -19,7 +19,9 @@ const stub = b64(`
   export const shared = (k) => t().shared[k];
 `);
 const file = fileURLToPath(new URL("../mods/reviewer/ask.js", import.meta.url));
-const source = readFileSync(file, "utf8").replace('from "herdr"', `from "${stub}"`);
+const source = readFileSync(file, "utf8")
+  .replace('from "herdr"', `from "${stub}"`)
+  .replace('from "./log.js"', `from "${b64("export const log = () => {}")}"`);
 assert.ok(source.includes(stub), "the herdr import was replaced");
 const { ask, pickAgent } = await import(b64(source));
 
