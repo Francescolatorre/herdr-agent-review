@@ -137,6 +137,18 @@ test("review follows the focused folder and preserves the quoted snapshot", asyn
   const captured = execFileSync(shell, args, { cwd: ordinary, encoding: "utf8",
     env: { ...process.env, VISUAL: `node "${probe}"`, EDITOR: "missing-editor" } });
   assert.deepEqual(JSON.parse(captured), [ordinary + "/" + filename]);
+  // No Git work tree: a bare repository (git: "this operation must be run in a work tree")
+  // and a plain folder both fall back to the folder view and say why.
+  assert.match(panel.gitNote, /not a git repository/i);
+  const bare = join(temp, "bare.git");
+  execFileSync("git", ["init", "-q", "--bare", bare]);
+  cwd = bare; panel.refresh(cx); await done();
+  assert(panel.plain, "a bare repository is browsed as a folder");
+  assert.equal(panel.error, null);
+  assert(panel.gitNote.startsWith("No Git changes here ("), panel.gitNote);
+  assert(panel.gitNote.endsWith("). Showing the folder's files."), panel.gitNote);
+  assert(panel.lookup("HEAD"));
   cwd = repo; panel.refresh(cx); await done();
+  assert.equal(panel.gitNote, null, "the note goes away once Git has a work tree");
   assert.equal(panel.scope, "commit"); assert.equal(panel.comments[0].text, "historic");
 });
