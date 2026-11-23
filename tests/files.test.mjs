@@ -83,7 +83,7 @@ test("review follows the focused folder and preserves the quoted snapshot", asyn
   };
   globalThis.reviewerTestHost = host;
   const hostModules = {
-    herdr: "spaces panes focused exec readTextFile watchFolder theme settings nextCommand props shared setShared checking layout run window notify openOverlay agents knownAgents hc closeOverlay keys",
+    herdr: "appHome spaces panes focused exec readTextFile watchFolder theme settings nextCommand props shared setShared checking layout run window notify openOverlay agents knownAgents hc closeOverlay keys",
     "gpui-kit": "View div svg",
     "gpui-base": "v_flex h_flex InputState Input TextareaState Textarea Scrollbar v_virtual_list VirtualListScrollHandle Popover v_resizable resizable_panel"
   };

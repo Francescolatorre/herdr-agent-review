@@ -52,6 +52,11 @@ jobs:
         if: hashFiles('scripts/test-uninstall.sh') != ''
         shell: bash
         run: sh scripts/test-uninstall.sh
+      # A stub curl stands in for GitHub, so this needs no network.
+      - name: scripts/test-check-update.sh
+        if: hashFiles('scripts/test-check-update.sh') != ''
+        shell: bash
+        run: sh scripts/test-check-update.sh
 
   # The release zip and its notes must keep building, and a version can't be bumped
   # without a CHANGELOG.md entry: scripts/build-release.sh fails otherwise.

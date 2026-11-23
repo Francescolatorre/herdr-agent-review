@@ -278,6 +278,13 @@ fill, `foreground` text at 13px. Top to bottom:
   block goes back to `changes`), then removes both mod folders; it needs
   Herdr open only
   for the layout step, and has `--dry-run`, `--no-layout` and `--no-keys`.
+  `scripts/check-update.sh` asks `api.github.com/repos/<repo>/releases/latest`
+  (one `curl` with `--connect-timeout 5 --max-time 20`) and compares its `tag_name`
+  with the installed `mods/reviewer/mod.json`, numerically per field; it exits 0
+  (current, or the installed one is newer), 10 (update available) or 3 (could not
+  tell: not installed, no curl or awk, any failure of the request, an answer
+  without a tag), and writes nothing. `scripts/test-check-update.sh` covers it
+  with a stub `curl`.
   `scripts/test-uninstall.sh` exercises both scripts against a throwaway home
   and a stub `herdr-app`.
 - Another mod opens a file's diff by setting shared `reviewer.open` to
@@ -360,6 +367,14 @@ fill, `foreground` text at 13px. Top to bottom:
   `on_item_click` (keys `r:<row>` and `c:<comment id>`) and
   `on_item_secondary_click` (quick ask). A `TextareaState` for the
   comment, created in `init`, with `submit` → `addComment`.
+- `update.js`: the opt-in update hint. `checkForUpdate({ enabled })` does
+  nothing unless the block's props say `update_check: true`; then, at most once
+  a day (shared key `reviewer.update`: `checked`, `latest`, `notified`), it reads
+  its own version from `appHome()/mods/reviewer/mod.json`, runs the same `curl`
+  as the script through `exec`, and posts one info toast per new release (title
+  "Reviewer <v> is available", the release URL in the body). A failed look is
+  silent and counts as a look; the function never rejects. `main.js` calls it
+  once from `init`. The numeric comparison is `newer(a, b)`.
 - `ask.js`: `pickAgent(space)`, `ask({ title, context, sent, folder })` →
   opens this mod as a modal dialog overlay with props `{ dialog: true,
   title, context, sent, space, folder }` (the focused pane's space and
