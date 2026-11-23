@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { spawnSync } from "node:child_process";
 import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -65,4 +66,14 @@ test("the diagram cache keeps at most LIMIT real files and empties the older one
   assert.equal(JSON.parse(readFileSync(join(dir, "index.json"), "utf8")).length, LIMIT);
   await store(`k${LIMIT + 5}`, svg(LIMIT + 5)); // storing a known key again does not grow the index
   assert.equal(JSON.parse(readFileSync(join(dir, "index.json"), "utf8")).length, LIMIT);
+});
+
+test("ELK layout works where setTimeout throws, as in Herdr's shell", () => {
+  const code = `globalThis.setTimeout = () => { throw new Error("setTimeout is not available"); };
+    const { diagram } = await import(${JSON.stringify(new URL("../mods/reviewer/diagram.js", import.meta.url).href)});
+    const nl = String.fromCharCode(10);
+    const first = diagram(["flowchart LR", " A --> B"].join(nl), {}), second = diagram(["stateDiagram-v2", " [*] --> A"].join(nl), {});
+    if (!first || !second) throw new Error("no diagram");`;
+  const run = spawnSync(process.execPath, ["--input-type=module", "-e", code], { encoding: "utf8" });
+  assert.equal(run.status, 0, run.stderr);
 });
