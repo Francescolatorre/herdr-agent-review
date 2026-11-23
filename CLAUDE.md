@@ -6,32 +6,24 @@ manager, so the version has to live in the files themselves.
 
 ## Releasing
 
-The version is the `version` field in `mods/reviewer/mod.json`. Each release
-is an annotated tag `v<version>` on main pointing at the commit that set
-that field.
+Die Linie startet bei 0.1.0; 0.1.0 bis 0.6.0 des Originals sind andere Releases.
 
-For every change a user would notice (behaviour, command names, props,
-keys), in the same commit or PR:
+Release Please owns the version in `mods/reviewer/mod.json`. Use Conventional
+Commits for changes reaching main, including the PR title for squash merges.
+`fix:` means patch, `feat:` means minor, and `feat!:` or a
+`BREAKING CHANGE:` footer signals a breaking change. Leave version fields
+and release tags to the release workflow after the initial manual v0.1.0.
+Release Please maintains CHANGELOG.md from that baseline.
 
-1. Bump `version` in `mods/reviewer/mod.json`.
-2. Update the Versions section of `README.md` with the Herdr version it was
-   tested on (`herdr-app --version` and `herdr --version`).
-3. Run `scripts/install.sh` (copies the mod into Herdr and runs
-   `herdr-app check`; never symlink, Herdr won't reload a link) and try
-   the mod in the app.
-4. Keep `RECIPE.md` in step with the code; on a mismatched Herdr version the
-   recipe is what users get.
+On pushes to main the workflow updates a release PR containing the proposed
+version and changelog. A maintainer reviews and merges it to publish the
+GitHub release and its `v<version>` tag. For initial setup, enable
+“Allow GitHub Actions to create and approve pull requests” in the repository's
+Actions settings. Approving the release remains a maintainer decision.
 
-After it lands on main:
-
-```
-git tag -a v<version> -m "reviewer <version>"
-git push origin main v<version>
-```
-
-Patch for fixes, minor for new behaviour. No changelog until a release
-changes something users must read about before upgrading. When Herdr
-ships a new `changes` mod, port what is wanted and update `cloned_from`.
+Keep README.md and RECIPE.md in step with behaviour. Run the applicable
+tests and `scripts/install.sh` (stages and checks the mod) and try it in
+Herdr. When porting changes from Herdr's shipped mod, update `cloned_from`.
 
 ## Commits
 

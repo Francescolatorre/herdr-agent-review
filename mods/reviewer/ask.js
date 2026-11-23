@@ -1,5 +1,6 @@
 // Opens the review message for confirmation in the space it came from.
 import { focused, notify, openOverlay } from "herdr";
+import { log } from "./log.js";
 
 export async function ask({ title, context, sent, folder }) {
   const origin = focused();
@@ -11,6 +12,7 @@ export async function ask({ title, context, sent, folder }) {
     });
     return "dialog";
   } catch (e) {
+    log("dialog.open", e);
     notify({ title: "Could not open the send dialog", body: String(e).slice(0, 200), level: "error" });
     return "none";
   }

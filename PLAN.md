@@ -63,3 +63,7 @@ Sind beide Variablen ungesetzt, verwendet Reviewer unter Windows `edit.exe`, unt
 Bei einem historischen Commit oder einer gelöschten Datei bleibt die Ansicht zum Lesen und Kommentieren verfügbar. Die Bearbeitungsaktion erscheint nur für die angezeigte Arbeitskopie.
 
 Akzeptanzfall: Eine Datei mit Leerzeichen im Namen aus einem Git-Worktree und anschließend aus einem gewöhnlichen Ordner öffnen, im konfigurierten Editor ändern und speichern. Reviewer zeigt jeweils den neuen Inhalt und im Worktree den aktualisierten Diff. Ohne eigene Einstellung öffnet sich der für das Betriebssystem vorgesehene Editor.
+
+## Nächste Feature-Idee
+
+Einen Pull Request als Ganzes öffnen und alle Änderungen zwischen seiner Basis und seinem Head gemeinsam reviewen.
