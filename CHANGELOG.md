@@ -8,6 +8,19 @@ behaviour).
 This is a fork of Reviewer by Vytas Gavelis (MIT). It counts its own releases from
 0.1.0; the original's 0.1.0 to 0.6.0 are different releases.
 
+## [0.2.0](https://github.com/Francescolatorre/herdr-agent-review/compare/v0.1.0...v0.2.0) (2026-11-23)
+
+
+### Features
+
+* check for a newer release with scripts/check-update.sh and an opt-in hint in the mod ([#9](https://github.com/Francescolatorre/herdr-agent-review/issues/9)) ([24385e4](https://github.com/Francescolatorre/herdr-agent-review/commit/24385e48f35628671abf551747fda3f8186f674d))
+* review all files in the focused worktree or folder ([#10](https://github.com/Francescolatorre/herdr-agent-review/issues/10)) ([9a897dc](https://github.com/Francescolatorre/herdr-agent-review/commit/9a897dce78685b5bb6b549161b940b745ab29dc4))
+
+
+### Bug Fixes
+
+* browse the folder when Git has no work tree (bare repository) and say why ([#12](https://github.com/Francescolatorre/herdr-agent-review/issues/12)) ([4cb0027](https://github.com/Francescolatorre/herdr-agent-review/commit/4cb0027c872d56f083f30e3405adfefc37dcc0fd))
+
 ## [Unreleased]
 
 ## [0.1.0] - 2026-11-21
