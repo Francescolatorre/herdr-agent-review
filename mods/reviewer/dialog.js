@@ -11,6 +11,7 @@
 // both ways and can be copied.
 // Enter or cmd-enter sends, Esc closes. Commands: "reviewer.send", "reviewer.close".
 import { div, svg } from "gpui-kit";
+import { log } from "./log.js";
 import { v_flex, h_flex, TextareaState, Textarea, Popover } from "gpui-base";
 import { agents, focused, spaces, knownAgents, hc, run, notify, props, closeOverlay, theme, settings, nextCommand, shared, setShared, window } from "herdr";
 
@@ -54,6 +55,7 @@ export class Dialog {
     if (this.closed) return;
     this.closed = true;
     if (this.sending && !this.lookingUp) {
+      log("delivery.unconfirmed");
       notify({ title: "Delivery unconfirmed", body: "Check the recipient before sending the draft again.", level: "warning" });
     }
     this.report(false);
@@ -117,6 +119,7 @@ export class Dialog {
       run("pane.focus", { terminal: agent.address });
     } else {
       this.error = (result.stderr || result.stdout).trim().slice(0, 300) || "hc send failed";
+      log("agent.send", this.error, result.code);
       this.confirm = null;
       cx.notify();
     }
@@ -140,7 +143,7 @@ export class Dialog {
         this.waitForAgent(cx, agent.name, previousTabs, text);
         return;
       }
-      catch (e) { this.error = String(e?.message || e).trim().slice(0, 300) || "Could not start an agent"; }
+      catch (e) { log("agent.start", e); this.error = String(e?.message || e).trim().slice(0, 300) || "Could not start an agent"; }
       if (!this.closed) { this.sending = false; this.lookingUp = false; cx.notify(); }
     });
   }
@@ -158,6 +161,7 @@ export class Dialog {
         this.waitForAgent(cx, name, previousTabs, text, until);
       } else {
         this.error = "The new agent did not become ready. Check the new tab, then choose a recipient.";
+        log("agent.timeout");
         this.sending = false;
         cx.notify();
       }

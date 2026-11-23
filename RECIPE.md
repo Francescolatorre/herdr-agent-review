@@ -129,8 +129,7 @@ fill, `foreground` text at 13px. Top to bottom:
   no untracked files or conflicts, since the working tree isn't part of it. The base branch is `props.base`, else
   `origin/HEAD`'s branch, else `main`, else `master`; the merge base is
   taken against the local branch when there is one, else `origin/<base>`.
-  A repo opens in "vs main" when the branch has left the base, else
-  "Uncommitted"; the choice is remembered per repo and machine in shared
+  A worktree opens in "Uncommitted"; the choice is remembered per worktree and machine in shared
   `reviewer.scope` (a picked commit as `commit:<full hash>`; one that no
   longer exists falls back to Uncommitted). The file list is `git diff <ref> --name-status`
   plus untracked files and conflicts from `git status`, sorted by path;
@@ -253,6 +252,8 @@ fill, `foreground` text at 13px. Top to bottom:
   KB of text pasted into the agent's terminal; some agents are slow or cut
   it short at this size. Consider sending fewer comments at a time."
 - Key commands: `reviewer.submit`, `reviewer.ask`,
+  `reviewer.shortcuts` (open or close a scrollable guide showing current Herdr
+  bindings, also available from the Shortcuts button and F1 when focused),
   `reviewer.clear` (discard drafts), `reviewer.scope` (next
   scope), `reviewer.full` (Full file on or off). They reach shown copies only.
 - Because of that, showing Reviewer from a key needs a second mod,
@@ -300,6 +301,19 @@ fill, `foreground` text at 13px. Top to bottom:
   30 seconds, or without `at`, is cleared unread.
 
 ## Built from
+
+- In All files, merge the full scope's changes (including deletions) with
+  `git ls-files --cached --others --exclude-standard -z`, optionally also
+  the ignored untracked paths, or with `git ls-tree -r --name-only -z <sha>`
+  for a single commit. Mark ancestors of changed files and render expanded
+  rows with a virtual list. Read ordinary files as numbered context rows.
+  Use a vertical resizable group for the list and preview in both Changes
+  and All files. Give each view its own stable ID so restoring the list
+  after maximizing the preview returns to that view's split.
+  Keep the same draft key in both views and include the full SHA in a
+  historical review. Outside Git, enumerate expanded directories on the
+  focused machine and key drafts by machine and folder. Open working files
+  in a terminal with VISUAL, EDITOR or the OS default.
 
 - A clone of the shipped `changes` mod (`mod.clone`, 0.1.8), so `mod.json`
   is `{ "place": "none", "cloned_from": { "name": "changes", "version": "0.1.8" } }`
@@ -422,7 +436,7 @@ fill, `foreground` text at 13px. Top to bottom:
 
 ## Done when
 
-- On a feature branch the header reads "vs main" and the list holds every
+- After selecting "vs main" on a feature branch the list holds every
   file the branch changed; on `main` with a clean tree, "Last commit"
   shows that commit's files and "Uncommitted" shows none. Picking an
   older commit from the scope list shows only that commit's files, reads

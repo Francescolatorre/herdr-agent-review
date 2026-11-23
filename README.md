@@ -24,11 +24,26 @@ in [LICENSE](LICENSE); see [Versions](#versions) for how its releases are counte
   *Last commit* (that commit plus whatever is uncommitted), *vs main*
   (everything since the branch left its base, committed or not), or any
   one commit on its own, picked from the same list: the branch's own
-  commits when it has left its base, else the last 100. A branch
-  that has left its base opens in *vs main*; the choice is remembered per
-  repo.
+  commits when it has left its base, else the last 100. A worktree opens
+  in *Uncommitted* until you choose another scope. That choice is remembered.
 
   ![Scope picker](screenshots/scope-picker.png)
+
+- **All files** opens the focused worktree as a folder tree. Changed files
+  show a status letter, and their parent folders show a colored dot.
+  In both Changes and All files, drag the horizontal divider to give the
+  file list or the preview more room. With a file open, click **⛶** to
+  maximize its preview. **Show files** or **Show tree** restores the split.
+  Select a text file to comment on its lines, or use **Comment** for the
+  whole file. Drafts from Changes and All files go into the same review.
+  In a working-tree comparison, **.gitignored-files** includes ignored
+  files on demand. A single-commit review reads that commit's files.
+- **Folders outside Git** open directly in All files. Expand folders to
+  browse them and review files just as you would in a worktree.
+- **Open in editor** opens a working copy in a new Herdr terminal on its
+  machine. Set `VISUAL` or `EDITOR` in the launching environment to choose
+  your editor. The defaults are `edit.exe` on Windows and `nano` or `vi`
+  on Unix. Reviewer refreshes the preview after edits.
 
 - **Comments on lines, ranges, hunks or whole files.** Click a line to
   open the comment box, click another line to widen the range, click a hunk
@@ -144,6 +159,19 @@ The panel width limit the installer raised is not restored.
 `scripts/test-uninstall.sh` runs install and uninstall against a throwaway
 home and a stub `herdr-app`; it needs no Herdr and never touches yours.
 
+## Reporting a problem
+
+Reviewer keeps its latest 200 diagnostic events in `reviewer.log` in the
+local Herdr app folder (default `~/.config/herdr-app/reviewer.log`, or
+`$HERDR_APP_HOME/reviewer.log`). Each line includes a UTC timestamp, the
+operation, and, when available, a failure category and numeric exit code.
+This covers failures observed by the mod. Output printed inside an editor
+or agent terminal is separate.
+
+When opening a bug report, include what you clicked, what you saw and the
+Reviewer and Herdr versions. If useful, review and paste just the log lines
+around the incident. Sharing is optional and manual.
+
 ## Versions
 
 Reviewer started as Vytas Gavelis's mod, with releases 0.1.0 to 0.6.0. This fork
@@ -166,11 +194,16 @@ that version and the output of `herdr-app --version` and `hc --version`.
 
 ## Keys
 
+Click **Shortcuts** in the Reviewer header, or press **F1** while Reviewer has
+focus. The panel shows your configured Herdr bindings and the keys for writing
+comments and sending reviews. Press **Esc** or **F1** to return to your review.
+
 `scripts/install.sh` adds these from the repo's `keys.json`:
 
 | Key | Does |
 |---|---|
 | `ctrl-shift-r` | Open Reviewer in the side panel, or close it when it is shown |
+| `ctrl-shift-f1` | Show or hide keyboard shortcuts while Reviewer is visible |
 | `ctrl-shift-enter` | Submit the shown scope's draft comments |
 | `ctrl-shift-a` | Ask the agent about the whole open diff |
 | `ctrl-shift-s` | Cycle Uncommitted, Last commit and vs main |
@@ -193,6 +226,7 @@ Bind these in `keys.json` to change the keys above or add more:
 | `reviewer.clear` | Discard the shown scope's drafts |
 | `reviewer.scope` | Cycle Uncommitted, Last commit and vs main |
 | `reviewer.full` | Show or fold the unchanged lines (*Full file*) |
+| `reviewer.shortcuts` | Show or hide the keyboard shortcut reference |
 | `mod.open:reviewer-toggle` | Show or hide Reviewer (an app command) |
 
 Block props: `palette` (`one-dark-pro`, `dark-plus` or `theme`),

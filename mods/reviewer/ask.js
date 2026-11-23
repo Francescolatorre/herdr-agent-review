@@ -1,6 +1,7 @@
 // Opens the review message for confirmation in the space it came from. Should
 // the overlay fail to open, the text goes straight to that space's agent.
 import { agents, focused, hc, notify, openOverlay, setShared, shared } from "herdr";
+import { log } from "./log.js";
 
 const agentName = (agent) => agent.tab_name || agent.program?.name || agent.app || agent.address;
 
@@ -31,7 +32,7 @@ export async function ask({ title, context, sent, folder }) {
     });
     return "dialog";
   } catch (e) {
-    console.log(`the send dialog could not open, sending directly: ${e}`);
+    log("dialog.open", e);
   }
   const text = String(context ?? "").trim();
   if (!text) return "none";
@@ -52,6 +53,7 @@ export async function ask({ title, context, sent, folder }) {
     report(sent);
     return "sent";
   }
+  log("agent.send", r.stderr, r.code);
   notify({ title: "Send failed", body: (r.stderr || r.stdout).trim().slice(0, 200), level: "error" });
   return "none";
 }

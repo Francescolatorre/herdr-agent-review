@@ -6,39 +6,24 @@ manager, so the version has to live in the files themselves.
 
 ## Releasing
 
-The version is the `version` field in `mods/reviewer/mod.json`. Each release
-is an annotated tag `v<version>` on main pointing at the commit that set
-that field.
+Die Linie startet bei 0.1.0; 0.1.0 bis 0.6.0 des Originals sind andere Releases.
 
-For every change a user would notice (behaviour, command names, props,
-keys), in the same commit or PR:
+Release Please owns the version in `mods/reviewer/mod.json`. Use Conventional
+Commits for changes reaching main, including the PR title for squash merges.
+`fix:` means patch, `feat:` means minor, and `feat!:` or a
+`BREAKING CHANGE:` footer signals a breaking change. Leave version fields
+and release tags to the release workflow after the initial manual v0.1.0.
+Release Please maintains CHANGELOG.md from that baseline.
 
-1. Bump `version` in `mods/reviewer/mod.json`.
-2. Update the Versions section of `README.md` with the Herdr version it was
-   tested on (`herdr-app --version` and `hc --version`).
-3. Run `scripts/install.sh` (copies the mod into Herdr and runs
-   `herdr-app check`; never symlink, Herdr won't reload a link) and try
-   the mod in the app.
-4. Keep `RECIPE.md` in step with the code; on a mismatched Herdr version the
-   recipe is what users get.
-5. If you touched `scripts/install.sh` or `scripts/uninstall.sh`, run
-   `scripts/test-uninstall.sh` (throwaway home, stub `herdr-app`, needs no
-   Herdr) and say in the README's Versions section where it ran. CI
-   (`.github/workflows/test.yml`) runs it on Linux, macOS and Windows; trying
-   the scripts against a real Herdr is only done on Windows so far, so macOS
-   and Linux need a run by someone on that system.
+On pushes to main the workflow updates a release PR containing the proposed
+version and changelog. A maintainer reviews and merges it to publish the
+GitHub release and its `v<version>` tag. For initial setup, enable
+“Allow GitHub Actions to create and approve pull requests” in the repository's
+Actions settings. Approving the release remains a maintainer decision.
 
-After it lands on main, tag the commit that set the version (not the merge
-commit):
-
-```
-git tag -a v<version> -m "reviewer <version>" <commit>
-git push origin v<version>
-```
-
-Patch for fixes, minor for new behaviour. No changelog until a release
-changes something users must read about before upgrading. When Herdr
-ships a new `changes` mod, port what is wanted and update `cloned_from`.
+Keep README.md and RECIPE.md in step with behaviour. Run the applicable
+tests (including `scripts/test-uninstall.sh` for installer changes) and `scripts/install.sh` (stages and checks the mod) and try it in
+Herdr. When porting changes from Herdr's shipped mod, update `cloned_from`.
 
 ## Scripts
 
@@ -69,12 +54,12 @@ PR descriptions.
 
 ## Tests
 
-- `node --test` (Node 18 or newer, no packages) runs `tests/highlight.test.mjs`,
+- `node --test` (Node 20.19+ or 22.12+, no packages) discovers the suite, including `tests/highlight.test.mjs`,
   the tokenizer's tests. Change `mods/reviewer/highlight.js` together with a
   test; the "spans add up to the input" test is the one the panel relies on.
 - `.github/workflows/test.yml` runs it on Node 20 and 22, and runs
   `scripts/test-uninstall.sh` (when the file exists) on Linux, macOS and
   Windows, on every pull request and on pushes to `main`. A branch named
   `ci/**` also runs on push, to try a CI change first.
-- Nothing tests `main.js` or the dialogs; that needs Herdr's window, so it
+- The panel and send fallback have host-stub tests. Visual behaviour needs Herdr's window, so it
   stays a manual try-out in the app. There is no coverage measurement.
