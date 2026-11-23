@@ -36,6 +36,7 @@ case "$1" in
         cp "$home/layouts/$from.json" "$home/layouts/$as.json"
         printf '%s' "$as" > "$home/.stub-layout" ;;
       layout.switch)
+        [ ! -f "$home/.stub-fail-switch" ] || exit 1
         printf '%s' "$3" | sed -n 's/.*"name":"\([^"]*\)".*/\1/p' | tr -d '\n' > "$home/.stub-layout" ;;
     esac ;;
   *) exit 1 ;;
@@ -91,6 +92,27 @@ check "Herdr was switched back to main" test "$(cat "$HERDR_APP_HOME/.stub-layou
 check "a second run exits 0" test "$rc" = 0
 check "a second run says so" grep -q 'not installed' "$work/out2"
 "$repo/scripts/install.sh" >/dev/null 2>&1; check "install works again afterwards" test -f "$HERDR_APP_HOME/mods/reviewer/mod.json"
+
+echo "a hand-edited clone comes back after uninstall and install"
+new_home keep main
+"$repo/scripts/install.sh" >/dev/null 2>&1
+python3 - "$HERDR_APP_HOME/layouts/main-reviewer.json" <<'PY'
+import json, sys
+p = sys.argv[1]; t = json.load(open(p, encoding="utf-8"))
+t["note"] = "edited by hand"
+json.dump(t, open(p, "w", encoding="utf-8"), indent=2)
+PY
+cp "$HERDR_APP_HOME/layouts/main-reviewer.json" "$work/clone.before"
+"$repo/scripts/uninstall.sh" >/dev/null 2>&1
+"$repo/scripts/install.sh" > "$work/out" 2>&1; rc=$?
+check "install exits 0" test "$rc" = 0
+check "the clone is back exactly as it was" cmp -s "$work/clone.before" "$HERDR_APP_HOME/layouts/main-reviewer.json"
+absent "nothing is left aside" sh -c "ls '$HERDR_APP_HOME'/layouts/*.uninstalled*"
+check "Herdr was switched to the clone" test "$(cat "$HERDR_APP_HOME/.stub-layout")" = main-reviewer
+check "it says it restored it" grep -q 'restored the one' "$work/out"
+"$repo/scripts/uninstall.sh" >/dev/null 2>&1; "$repo/scripts/uninstall.sh" >/dev/null 2>&1
+"$repo/scripts/install.sh" >/dev/null 2>&1
+check "uninstall twice in a row does not lose the clone" test -f "$HERDR_APP_HOME/layouts/main-reviewer.json"
 
 echo "dry run changes nothing"
 new_home dry main
@@ -162,6 +184,73 @@ HERDR_APP_HOME=$work/does-not-exist "$repo/scripts/uninstall.sh" >/dev/null 2>&1
 check "a missing home is not an error" test "$rc" = 0
 HERDR_APP_HOME=/ "$repo/scripts/uninstall.sh" >/dev/null 2>&1; rc=$?
 check "the filesystem root is refused" test "$rc" = 2
+
+echo "the other shipped layouts: terminals and win98"
+for base in terminals win98; do
+  new_home "c-$base" "$base"
+  cp "$HERDR_APP_HOME/layouts/main.json" "$HERDR_APP_HOME/layouts/$base.json"
+  "$repo/scripts/install.sh" >/dev/null 2>&1
+  check "$base: install cloned it" test -f "$HERDR_APP_HOME/layouts/$base-reviewer.json"
+  "$repo/scripts/uninstall.sh" >/dev/null 2>&1
+  check "$base: the clone is set aside" test -f "$HERDR_APP_HOME/layouts/$base-reviewer.json.uninstalled"
+  check "$base: Herdr is back on $base" test "$(cat "$HERDR_APP_HOME/.stub-layout")" = "$base"
+done
+
+echo "--no-keys, and a keys.json that isn't JSON"
+new_home badjson main
+"$repo/scripts/install.sh" >/dev/null 2>&1
+printf '{ "global": { "ctrl-q": "reviewer.submit" } }\n' > "$HERDR_APP_HOME/keys.json"
+"$repo/scripts/uninstall.sh" --no-layout --no-keys >/dev/null 2>&1
+check "--no-keys leaves the binding alone" grep -q 'reviewer.submit' "$HERDR_APP_HOME/keys.json"
+absent "--no-keys still removes the mods" test -e "$HERDR_APP_HOME/mods/reviewer"
+"$repo/scripts/install.sh" --no-keys >/dev/null 2>&1
+printf '{ not json' > "$HERDR_APP_HOME/keys.json"; cp "$HERDR_APP_HOME/keys.json" "$work/keys.bad"
+"$repo/scripts/uninstall.sh" --no-layout > "$work/out" 2>&1; rc=$?
+check "invalid JSON: exits non-zero" test "$rc" != 0
+check "invalid JSON: names the problem" grep -q 'not valid JSON' "$work/out"
+check "invalid JSON: keys.json is left byte for byte" cmp -s "$work/keys.bad" "$HERDR_APP_HOME/keys.json"
+absent "invalid JSON: the mods are still removed" test -e "$HERDR_APP_HOME/mods/reviewer"
+
+echo "Herdr refuses the switch back"
+new_home sw main
+"$repo/scripts/install.sh" >/dev/null 2>&1
+touch "$HERDR_APP_HOME/.stub-fail-switch"
+"$repo/scripts/uninstall.sh" > "$work/out" 2>&1; rc=$?
+check "exits non-zero" test "$rc" != 0
+check "the clone stays where it is" test -f "$HERDR_APP_HOME/layouts/main-reviewer.json"
+absent "nothing is set aside" test -e "$HERDR_APP_HOME/layouts/main-reviewer.json.uninstalled"
+check "says the switch failed" grep -q 'switching to main failed' "$work/out"
+
+echo "several set-aside clones: the newest comes back"
+new_home multi main
+"$repo/scripts/install.sh" >/dev/null 2>&1
+L=$HERDR_APP_HOME/layouts
+mv "$L/main-reviewer.json" "$L/main-reviewer.json.uninstalled"
+printf '%s' main > "$HERDR_APP_HOME/.stub-layout"   # where a real uninstall leaves Herdr
+cp "$L/main-reviewer.json.uninstalled" "$L/main-reviewer.json.uninstalled.1000000000"
+cp "$L/main-reviewer.json.uninstalled" "$L/main-reviewer.json.uninstalled.2000000000"
+python3 - "$L/main-reviewer.json.uninstalled.2000000000" <<'PY'
+import json, sys
+p = sys.argv[1]; t = json.load(open(p, encoding="utf-8")); t["note"] = "newest"
+json.dump(t, open(p, "w", encoding="utf-8"), indent=2)
+PY
+"$repo/scripts/install.sh" >/dev/null 2>&1
+check "the one with the highest timestamp is restored" grep -q '"note": "newest"' "$L/main-reviewer.json"
+check "the older ones are kept" test -f "$L/main-reviewer.json.uninstalled.1000000000" -a -f "$L/main-reviewer.json.uninstalled"
+
+echo "leftovers, usage, and a layout without a changes block"
+new_home stage main
+"$repo/scripts/install.sh" >/dev/null 2>&1
+mkdir -p "$HERDR_APP_HOME/.reviewer-install/previous"
+"$repo/scripts/uninstall.sh" --no-layout >/dev/null 2>&1
+absent "an interrupted install's stage is removed" test -e "$HERDR_APP_HOME/.reviewer-install"
+"$repo/scripts/uninstall.sh" --bogus >/dev/null 2>&1; rc=$?
+check "an unknown option exits 2" test "$rc" = 2
+new_home lone lone
+printf '{ "id": "root", "type": "block", "content": { "mod": "files" } }\n' > "$HERDR_APP_HOME/layouts/lone.json"
+"$repo/scripts/install.sh" > "$work/out" 2>&1; rc=$?
+check "install exits 0 when the layout has no changes block" test "$rc" = 0
+check "and says so" grep -q 'no `changes` block' "$work/out"
 
 echo
 echo "$pass passed, $fail failed"

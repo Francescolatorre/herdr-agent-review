@@ -1,0 +1,72 @@
+name: tests
+
+# Runs on every pull request and on pushes to main. Branches named ci/** also
+# run on push, so a CI change can be tried before it has a pull request.
+on:
+  push:
+    branches: [main, "ci/**"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  tokenizer:
+    name: tokenizer (node ${{ matrix.node }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [20, 22]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      # tests/highlight.test.mjs; `node --test` finds every *.test.mjs itself.
+      - run: node --test
+
+  scripts:
+    name: install and uninstall scripts (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      # The scripts call python3; fail early and clearly if a runner lacks it.
+      - name: Check that python3 runs
+        shell: bash
+        run: python3 --version
+      - name: Check the syntax of every script with sh
+        shell: bash
+        run: |
+          for f in scripts/*.sh; do echo "sh -n $f"; sh -n "$f"; done
+      # Uses a throwaway HERDR_APP_HOME and a stub herdr-app, so no Herdr is needed.
+      - name: scripts/test-uninstall.sh
+        if: hashFiles('scripts/test-uninstall.sh') != ''
+        shell: bash
+        run: sh scripts/test-uninstall.sh
+
+  # The release zip and its notes must keep building, and a version can't be bumped
+  # without a CHANGELOG.md entry: scripts/build-release.sh fails otherwise.
+  release-build:
+    name: release build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the zip, checksum and notes
+        run: sh scripts/build-release.sh "$RUNNER_TEMP/dist"
+      - name: Check what is in the zip
+        run: |
+          version=$(sed -n 's/^  "version": *"\([^"]*\)".*/\1/p' mods/reviewer/mod.json | head -n 1)
+          unzip -l "$RUNNER_TEMP/dist/herdr-reviewer-$version.zip" | tee "$RUNNER_TEMP/list.txt"
+          for f in mods/reviewer/mod.json mods/reviewer/main.js mods/reviewer-toggle/mod.json scripts/install.sh scripts/uninstall.sh keys.json LICENSE CHANGELOG.md; do
+            grep -q "herdr-reviewer-$version/$f\$" "$RUNNER_TEMP/list.txt" || { echo "missing in the zip: $f" >&2; exit 1; }
+          done
+          (cd "$RUNNER_TEMP/dist" && sha256sum -c "herdr-reviewer-$version.zip.sha256")

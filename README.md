@@ -6,6 +6,9 @@ you click lines to leave comments, and "Submit review" sends every comment,
 with the lines it is about, to the agent running in the space as one
 message.
 
+This is a fork of Reviewer by Vytas Gavelis (MIT) and keeps his copyright notice
+in [LICENSE](LICENSE); see [Versions](#versions) for how its releases are counted.
+
 ![reviewer](preview.png)
 
 ## What it does
@@ -82,6 +85,10 @@ Everything the shipped panel did (file list, diff, commit box) stays.
 
 This fork targets herdr-App 0.1.16 and herdr-core (`hc`) 0.1.21. The app uses its configured core to send review comments.
 
+A release is a zip, `herdr-reviewer-<version>.zip`, with its `.sha256`, on the
+repository's Releases page: unpack it and run `scripts/install.sh` from the
+folder (or clone the repository and check out the tag `v<version>`).
+
 1. Run `scripts/install.sh`. It runs `herdr-app check` on a staged copy
    before installing it in `~/.config/herdr-app/mods/` (or
    `$HERDR_APP_HOME/mods/`). Without the script: copy the folder by
@@ -133,9 +140,10 @@ order, and `--dry-run` shows what it would do without changing anything:
 1. **Layouts** (needs Herdr open). A `<name>-reviewer` clone the installer made
    is never deleted, since you may have changed it: Herdr is switched back to
    the layout it was cloned from and the clone is set aside as
-   `<name>.json.uninstalled` (Herdr can't delete a layout, so rename it back
-   to restore it). In a layout of your own, the `reviewer` block goes back to
-   `changes`. With Herdr closed the layouts are left alone and the script
+   `<name>.json.uninstalled` (Herdr can't delete a layout). Running
+   `scripts/install.sh` again puts that file back as it was instead of
+   cloning anew, so a layout you edited by hand survives. In a layout of your
+   own, the `reviewer` block goes back to `changes`. With Herdr closed the layouts are left alone and the script
    tells you to run it again.
 2. **Keys.** Every binding to a Reviewer action (`reviewer.*`,
    `mod.open:reviewer-toggle`) is removed, whichever key it is on. Other keys
@@ -166,11 +174,21 @@ around the incident. Sharing is optional and manual.
 
 ## Versions
 
-This checkout is based on upstream Reviewer 0.6.0; 0.7.0 adds the keys and
-`reviewer-toggle`, 0.8.0 adds `scripts/uninstall.sh`, tested with herdr-app
-0.1.16 and hc 0.1.21. The uninstaller's file logic is covered by
-`scripts/test-uninstall.sh` on Windows (Git Bash); it has not been run on macOS
-or Linux yet. The mod version is the
+Reviewer started as Vytas Gavelis's mod, with releases 0.1.0 to 0.6.0. This fork
+counts its own releases from 0.1.0, so a number here is a release of this fork,
+and the original's 0.1.0 to 0.6.0 are different releases. Before the split the
+fork used the numbers 0.6.1 to 0.8.1, counted on from the original's; none of
+them stayed a release, and the tag `v0.7.0` has been removed.
+
+0.1.0 is everything up to the former 0.8.1: the keys and `reviewer-toggle`,
+`scripts/uninstall.sh`, and the direct send when the send dialog can't open.
+Tested with herdr-app 0.1.16 and hc 0.1.21.
+The install and uninstall scripts' file logic is covered by
+`scripts/test-uninstall.sh`, which passed on Windows (Git Bash) and on GitHub's
+Ubuntu, macOS and Windows runners. Trying the scripts against a real Herdr has
+only been done on Windows; macOS and Linux still need that. The direct send is
+covered by `tests/ask.test.mjs` with a stub; the failure itself can't be provoked
+in the app, so it has not been tried there. The mod version is the
 `version` field in `mods/reviewer/mod.json`. When reporting a problem, include
 that version and the output of `herdr-app --version` and `hc --version`.
 
