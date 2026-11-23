@@ -41,7 +41,9 @@ in [LICENSE](LICENSE); see [Versions](#versions) for how its releases are counte
 - **Markdown files** (`.md`, `.markdown`) with no change open as a document:
   frontmatter, headings, paragraphs, lists, tables and code blocks each
   appear as a block with its line range, and **Comment** on a block comments
-  on those lines. A Mermaid fence shows as source for now. A changed Markdown
+  on those lines. A Mermaid fence (flowchart, state, sequence, class, ER,
+  XY chart) is drawn as a diagram, rendered locally; **Source** shows its
+  text, and a diagram that cannot be drawn stays as source. A changed Markdown
   file opens as its diff; **Preview** and **Source** switch between the two.
   A block comment is an ordinary line comment: it shows under its lines in
   the source view too, and goes into the same review. Files that split into

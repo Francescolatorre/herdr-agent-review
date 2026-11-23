@@ -1,0 +1,2 @@
+mods/reviewer/renderer.bundle.js -diff -text linguist-generated=true
+mods/reviewer/licenses/* -text

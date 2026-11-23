@@ -315,6 +315,17 @@ fill, `foreground` text at 13px. Top to bottom:
   Put each comment under the block its last line belongs to.
 - Open an unchanged Markdown file as a document and a changed one as its
   diff; remember the switch per file.
+- Draw each Mermaid block (at most 20 per file, 6000 characters each) with a
+  bundled, synchronous renderer (beautiful-mermaid with ELK), one block per
+  turn so the panel stays usable. Replace the CSS variables and the style
+  element in its SVG with concrete theme colors, because GPUI paints SVG
+  without a browser. Show it with `image(path)` from a file under the app
+  folder (`data/reviewer-mermaid/<key>.svg`). Herdr cannot delete files, so
+  keep an index of the newest 60 keys and overwrite older files with an empty
+  SVG. A diagram that is unsupported, too large or empty stays source. The
+  bundle is generated from a lockfile by `scripts/build-mermaid.mjs`; CI
+  checks that the committed bundle matches it. The renderer runs where there
+  is no `window`, so the build gives ELK's GWT code its built-ins itself.
 
 ## Built from
 

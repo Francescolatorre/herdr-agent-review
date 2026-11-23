@@ -36,15 +36,17 @@
 //          font_size: px (default: the terminal's font size minus one),
 //          base: the branch reviews are against (default: origin/HEAD, else main, else master),
 //          update_check: true to be told once a day, by a toast, when a newer release exists (default: off) }.
-import { View, div, svg } from "gpui-kit";
+import { View, div, svg, image } from "gpui-kit";
 import { v_flex, h_flex, TextView, InputState, Input, TextareaState, Textarea, Scrollbar, v_virtual_list, VirtualListScrollHandle, Popover, v_resizable, resizable_panel } from "gpui-base";
-import { spaces, panes, focused, exec, readTextFile, watchFolder, theme, settings, nextCommand, props, shared, setShared } from "herdr";
+import { spaces, panes, focused, exec, readTextFile, writeTextFile, appHome, watchFolder, theme, settings, nextCommand, props, shared, setShared } from "herdr";
 import { tokenize, languageOf } from "./highlight.js";
 import { ask } from "./ask.js";
 import { palette } from "./palette.js";
 import { Dialog } from "./dialog.js";
 import { buildTree, visibleRows, gitInventory, fileLines } from "./files.js";
 import { documentBlocks, isMarkdown, MAX_BLOCKS } from "./markdown.js";
+import { diagram, imageKey } from "./diagram.js";
+import { createDiagramCache } from "./diagram-cache.js";
 import { directory, openEditor } from "./workspace.js";
 import { log } from "./log.js";
 import { shortcutsPanel } from "./shortcuts.js";
@@ -143,7 +145,8 @@ export default class Changes extends View {
   init(_props, cx) {
     // Opened as the send dialog (ask.js): this copy is the dialog, nothing else.
     if (props()?.dialog) { this.dialog = Object.create(Dialog.prototype); this.dialog.init(_props, cx); return; }
-    this.maximized = false; this.allFiles = false; this.plain = false; this.expanded = new Set(); this.doc = null; this.docView = new Map();
+    this.maximized = false; this.allFiles = false; this.plain = false; this.expanded = new Set(); this.doc = null; this.docView = new Map(); this.diagramSource = new Set();
+    this.cacheDiagram = createDiagramCache({ appHome, readTextFile, writeTextFile }); this.redraw = () => cx.notify();
     this.tree = buildTree([], []); this.treeRows = []; this.workingView = false;
     if (!checking()) this.registerPanel();
     log("ready");
@@ -333,7 +336,7 @@ export default class Changes extends View {
       this.tree = buildTree([], []); this.treeRows = []; this.hasHead = false;
       this.folderWatch?.cancel();
       this.folderWatch = null;
-      this.context = context; this.doc = null; this.docView = new Map(); this.root = null; this.log = null; this.choosingScope = false; this.files = []; this.open = null; this.comments = []; this.composer = null;
+      this.context = context; this.doc = null; this.docView = new Map(); this.diagramSource = new Set(); this.root = null; this.log = null; this.choosingScope = false; this.files = []; this.open = null; this.comments = []; this.composer = null;
       this.setLines([]); this.message = ""; this.input.set_value(""); this.error = null; this.note_ = null; this.gitNote = null; this.watched = null; this.closed = false; this.limited = false;
     }
     if (!cwd) return;
@@ -627,6 +630,7 @@ export default class Changes extends View {
     if (file.status && lines.length > (lines.some((l) => l[0] === "=") ? FILE_LINES + DIFF_LINES : DIFF_LINES)) lines = lines.slice(0, DIFF_LINES);
     if (this.loadTicket === ticket && key() === context && this.open === path && scope === this.scopeId() && range === this.range) this.setLines(lines.map(line => line.length > 4000 ? line.slice(0, 4000) + "… (line truncated)" : line), path);
     if (this.loadTicket === ticket && key() === context && this.open === path && scope === this.scopeId() && range === this.range) this.doc = isMarkdown(path) && typeof source === "string" && source.length <= 400000 ? this.splitDocument(path, source) : null;
+    if (this.doc) this.renderDiagrams(this.doc, context);
   }
 
   // The text of a changed Markdown file for the document view: the picked commit's
@@ -638,6 +642,25 @@ export default class Changes extends View {
       return r?.code === 0 ? r.stdout : null;
     }
     return readTextFile(`${this.root}/${path}`, { on: this.on }).catch(() => null);
+  }
+
+  // Mermaid fences become pictures, one at a time so the panel stays usable. A diagram that is
+  // not supported, too big or has a syntax error stays what it was: commentable source.
+  async renderDiagrams(doc, context) {
+    const t = theme();
+    for (const block of doc.blocks.filter((b) => b.kind === "mermaid").slice(0, 20)) {
+      await Promise.resolve(); // let the first frame show the source
+      if (this.doc !== doc || key() !== context) return;
+      try {
+        const graphic = diagram(block.body, t);
+        if (!graphic) continue;
+        const asset = await this.cacheDiagram(imageKey(graphic.svg), graphic.svg);
+        if (this.doc !== doc) return;
+        block.image = { asset, width: graphic.width, height: graphic.height };
+        log("render");
+      } catch (error) { log("render", error); }
+      this.redraw();
+    }
   }
 
   splitDocument(path, text) {
@@ -692,13 +715,19 @@ export default class Changes extends View {
       .children(blocks.map((block, i) => {
         const id = `doc-${block.start}`, active = open && open.from.number === block.start && open.to.number === block.end;
         const where = block.start === block.end ? `Line ${block.start}` : `Lines ${block.start}–${block.end}`;
-        const label = block.kind === "metadata" ? `Frontmatter · ${where.toLowerCase()}` : block.kind === "mermaid" ? `Mermaid source · ${where.toLowerCase()}` : where;
+        const graphic = block.image, flip = `${this.open}:${block.start}`, showSource = !graphic || this.diagramSource.has(flip);
+        const label = block.kind === "metadata" ? `Frontmatter · ${where.toLowerCase()}` : block.kind === "mermaid" ? `Mermaid ${showSource ? "source" : "diagram"} · ${where.toLowerCase()}` : where;
+        const width = graphic ? Math.min(graphic.width, 640) : 0;
         const body = block.kind === "metadata" ? "~~~yaml\n" + block.body + "\n~~~" : block.text;
         return v_flex().id(id).flex_none().gap(6).p(8).rounded(7).border_1().border_color(active ? t.accent : t.border)
           .child(h_flex().items_center().gap(6)
             .child(div().flex_1().min_w(0).text_size(11).text_color(t.dim).child(label))
+            .when(Boolean(graphic), (row) => row.child(link(`${id}-flip`, showSource ? "Diagram" : "Source", (_e, cx) => {
+              if (this.diagramSource.has(flip)) this.diagramSource.delete(flip); else this.diagramSource.add(flip);
+              cx.notify();
+            })))
             .child(link(`${id}-comment`, "Comment", (_e, cx) => this.commentBlock(block, cx))))
-          .child(TextView.markdown(id + "-text", body))
+          .child(showSource ? TextView.markdown(id + "-text", body) : image(graphic.asset).w(width).h(width * graphic.height / graphic.width).flex_none())
           .children((under.get(i) ?? []).map(card));
       }));
   }
