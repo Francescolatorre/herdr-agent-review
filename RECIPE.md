@@ -117,8 +117,8 @@ fill, `foreground` text at 13px. Top to bottom:
 ## How it behaves
 
 - Follows the focused pane's folder and machine, like the shipped panel:
-  changing panes, spaces or tabs reloads; "Not a git repository" shows in
-  the list otherwise. Refreshes every 10 s and on any change under the repo
+  changing panes, spaces or tabs reloads. Where Git has no work tree (a plain
+  folder, a bare repository) it lists the folder's files, with a note why. Refreshes every 10 s and on any change under the repo
   (local folders only).
 - **Scope.** What is reviewed is the working tree against one of three
   refs: `HEAD` (Uncommitted), `HEAD~1` (Last commit: that commit plus
