@@ -330,7 +330,7 @@ export default class Changes extends View {
       this.folderWatch?.cancel();
       this.folderWatch = null;
       this.context = context; this.root = null; this.log = null; this.choosingScope = false; this.files = []; this.open = null; this.comments = []; this.composer = null;
-      this.setLines([]); this.message = ""; this.input.set_value(""); this.error = null; this.note_ = null; this.watched = null; this.closed = false; this.limited = false;
+      this.setLines([]); this.message = ""; this.input.set_value(""); this.error = null; this.note_ = null; this.gitNote = null; this.watched = null; this.closed = false; this.limited = false;
     }
     if (!cwd) return;
     this.loading = true;
@@ -339,8 +339,11 @@ export default class Changes extends View {
         const top = await exec("git", [...READ, "rev-parse", "--show-toplevel"], { cwd, on });
         if (key() !== context) return;
         if (top.code !== 0) {
-          if (!/not a git repository|kein git.repository/i.test(top.stderr)) throw Object.assign(new Error(top.stderr || "Git lookup failed"), { code: top.code });
+          // No work tree here: not a repo, a bare repo, a .git folder, a repo Git refuses
+          // to open. Whatever Git's wording or language, browse the folder and say why.
+          const why = String(top.stderr ?? "").split(/\r?\n/).find((l) => l.trim())?.replace(/^fatal:\s*/i, "").trim();
           await this.refreshFolder(cwd, on, context, cx);
+          if (key() === context) this.gitNote = `No Git changes here${why ? ` (${why.slice(0, 160)})` : ""}. Showing the folder's files.`;
           return;
         }
         const root = top.stdout.trim(), git = (args) => exec("git", [...READ, ...args], { cwd: root, on });
@@ -411,7 +414,7 @@ export default class Changes extends View {
         };
         const paths = showTree ? await gitInventory(read, scope === "commit" ? sha : null, ignored) : [];
         if (key() !== context) return;
-        this.plain = false; this.allFiles = showTree; this.ignored = ignored;
+        this.plain = false; this.allFiles = showTree; this.ignored = ignored; this.gitNote = null;
         this.tree = buildTree(paths, showTree ? files : []);
         this.treeRows = visibleRows(this.tree, this.expanded);
         if (root !== this.root || scope !== this.scope || sha !== this.sha || range.join(" ") !== this.range.join(" ")) { this.setLines([]); }
@@ -1100,6 +1103,7 @@ export default class Changes extends View {
       // Narrow panel: the comment box is a strip under the diff instead of a column beside it.
       .when(Boolean(this.composer) && this.narrow(), (e) => e.child(this.box(t, target, true)))
       .when(Boolean(this.note_), (e) => e.child(div().px(10).pb(8).text_size(11).text_color(t.ansi1).child(this.note_)))
+      .when(Boolean(this.gitNote), (e) => e.child(div().px(10).pb(8).text_size(11).child(this.gitNote)))
       .when(!this.plain, el => el.child(h_flex().flex_none().p(10).gap(8).border_t(1).border_color(t.border)
         .child(div().id("commit-message").flex_1().min_w(0).h(32).px(10).flex().items_center().rounded(8).border_1().border_color(this.typing ? t.accent : t.border).cursor_text().on_mouse_down("left", (_e, cx) => cx.stop_propagation()).child(Input.new(this.input).h_full().text_size(12).text_color(t.foreground)))
         .child(div().id("commit").h(32).px(14).flex().items_center().rounded(8).bg(enabled ? t.solid : t.raised).text_color(enabled ? t.solid_foreground : t.dim).text_size(12).when(enabled, (e) => e.cursor_pointer()).on_click((_e, cx) => this.commit(cx)).child(this.busy ? "Committing…" : "Commit"))));
