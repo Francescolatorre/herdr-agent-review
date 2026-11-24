@@ -29,6 +29,8 @@ in [LICENSE](LICENSE); see [Versions](#versions) for how its releases are counte
 
   ![Scope picker](screenshots/scope-picker.png)
 
+- A line under the header names the folder being reviewed (with the branch,
+  and the machine when it is not this one); hover it for the full path.
 - **All files** opens the focused worktree as a folder tree. Changed files
   show a status letter, and their parent folders show a colored dot.
   In both Changes and All files, drag the horizontal divider to give the
