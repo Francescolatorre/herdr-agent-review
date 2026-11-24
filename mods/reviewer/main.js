@@ -884,6 +884,20 @@ export default class Changes extends View {
 
   // The scope picker: a small select-looking box with the scope's name; a
   // Popover lists the scopes the repo offers, with a check on the current one.
+  // Which folder the panel reviews: its name, then the rest of the path, the machine when it is
+  // not this one, and the branch. The full path is the tooltip.
+  folderLine(t) {
+    const root = String(this.root).replace(/[/\\]+$/, ""), cut = Math.max(root.lastIndexOf("/"), root.lastIndexOf("\\"));
+    const name = root.slice(cut + 1) || root, parent = cut > 0 ? root.slice(0, cut + 1) : "";
+    const branch = !this.plain ? this.scopeInfo?.branch : null;
+    return h_flex().id("folder-line").px(14).pb(8).gap(6).items_center().min_w(0).text_size(11)
+      .tooltip(`${root}${this.on ? ` (on ${this.on})` : ""}`)
+      .when(Boolean(this.on), (e) => e.child(div().flex_none().text_color(t.accent).child(this.on)))
+      .child(div().flex_none().font_semibold().child(name))
+      .when(Boolean(branch), (e) => e.child(div().flex_none().text_color(t.dim).child(`· ${branch}`)))
+      .child(div().flex_1().min_w(0).truncate().text_color(t.muted).child(parent));
+  }
+
   scopePicker(t) {
     const i = this.scopeInfo ?? {};
     const options = [
@@ -1086,6 +1100,7 @@ export default class Changes extends View {
             .tooltip(this.full() ? "Fold the unchanged lines" : "Show the whole file").on_click((_e, cx) => this.toggleFull(cx))
             .child(svg(this.full() ? "mods/reviewer/fold-vertical.svg" : "mods/reviewer/unfold-vertical.svg").size(13))))
           .when(!compact, (e) => e.when(!this.plain, el => el.child(stats())).child(actions())))
+        .when(Boolean(this.root), (e) => e.child(this.folderLine(t)))
         .when(compact, (e) => e.child(h_flex().h(34).flex_none().px(14).gap(8).items_center()
           .when(!this.plain, el => el.child(stats())).child(div().flex_1()).child(actions()))))
       .when(Boolean(this.root), e => e.child(h_flex().flex_none().h(30).px(6).gap(2).items_center()
