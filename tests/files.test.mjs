@@ -5,7 +5,7 @@ import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync
 import { register } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { gitInventory, buildTree, visibleRows, fileLines } from "../mods/reviewer/files.js";
+import { gitInventory, ignoredInventory, buildTree, visibleRows, fileLines } from "../mods/reviewer/files.js";
 
 test("worktree ignore exceptions, deleted paths and historical files", async (t) => {
   const cwd = mkdtempSync(join(tmpdir(), "reviewer-files-"));
@@ -23,11 +23,21 @@ test("worktree ignore exceptions, deleted paths and historical files", async (t)
   put("src/debug.log", "ignored");
   put("src/keep.log", "included");
   const read = args => git(...args);
-  const normal = await gitInventory(read, null, false);
+  mkdirSync(join(cwd, "dist")); put("dist/bundle.js", "x"); put(".gitignore", "*.log\ndist/\n");
+  const normal = await gitInventory(read, null);
   assert(normal.includes("src/keep.log"));
   assert(!normal.includes("src/debug.log"));
-  assert((await gitInventory(read, null, true)).includes("src/debug.log"));
-  const historical = await gitInventory(read, "HEAD", true);
+  assert(!normal.some(path => path.startsWith("dist")));
+  // Ignored files are listed on their own; a wholly ignored folder is one entry, not its files.
+  const ignored = await ignoredInventory(read);
+  assert(ignored.files.includes("src/debug.log"));
+  assert.deepEqual(ignored.directories, ["dist"]);
+  assert(!ignored.files.some(path => path.startsWith("dist")));
+  const shown = buildTree(normal.concat(ignored.files), [], ignored.directories, new Set([...ignored.files, ...ignored.directories]));
+  const rowFor = path => visibleRows(shown, new Set(["src"])).find(row => row.path === path);
+  assert(rowFor("dist").ignored && rowFor("dist").children.length === 0);
+  assert(rowFor("src/debug.log").ignored && !rowFor("src/keep.log").ignored);
+  const historical = await gitInventory(read, "HEAD");
   assert(historical.includes("src/deleted.txt"));
   assert(!historical.includes("src/keep.log"));
   const tree = buildTree(normal, [{ path: "src/deleted.txt", status: "D" }]);

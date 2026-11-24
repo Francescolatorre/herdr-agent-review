@@ -38,8 +38,11 @@ in [LICENSE](LICENSE); see [Versions](#versions) for how its releases are counte
   maximize its preview. **Show files** or **Show tree** restores the split.
   Select a text file to comment on its lines, or use **Comment** for the
   whole file. Drafts from Changes and All files go into the same review.
-  In a working-tree comparison, **.gitignored-files** includes ignored
-  files on demand. A single-commit review reads that commit's files.
+  In a working-tree comparison the files Git ignores are listed too, dimmed;
+  a wholly ignored folder (`node_modules`, `dist`) shows as one entry, not
+  opened. **hide gitignored files** (a green check when on, off by default)
+  leaves them out; the choice is kept per folder. A single-commit review
+  reads that commit's files.
 - **Markdown files** (`.md`, `.markdown`) with no change open as a document:
   frontmatter, headings, paragraphs, lists, tables and code blocks each
   appear as a block with its line range, and **Comment** on a block comments
