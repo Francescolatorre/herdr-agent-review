@@ -26,6 +26,14 @@ jobs:
           node-version: ${{ matrix.node }}
       # tests/highlight.test.mjs; `node --test` finds every *.test.mjs itself.
       - run: node --test
+      # The committed Mermaid renderer must be what its lockfile builds.
+      - name: Check the renderer bundle against its pinned inputs
+        if: matrix.node == 22
+        working-directory: scripts/mermaid-build
+        run: npm ci --ignore-scripts
+      - name: Rebuild and compare
+        if: matrix.node == 22
+        run: node scripts/build-mermaid.mjs --check
 
   scripts:
     name: install and uninstall scripts (${{ matrix.os }})

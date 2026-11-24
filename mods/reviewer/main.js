@@ -36,19 +36,22 @@
 //          font_size: px (default: the terminal's font size minus one),
 //          base: the branch reviews are against (default: origin/HEAD, else main, else master),
 //          update_check: true to be told once a day, by a toast, when a newer release exists (default: off) }.
-import { View, div, svg } from "gpui-kit";
+import { View, div, svg, image } from "gpui-kit";
 import { v_flex, h_flex, TextView, InputState, Input, TextareaState, Textarea, Scrollbar, v_virtual_list, VirtualListScrollHandle, Popover, v_resizable, resizable_panel } from "gpui-base";
-import { spaces, panes, focused, exec, readTextFile, watchFolder, theme, settings, nextCommand, props, shared, setShared } from "herdr";
+import { spaces, panes, focused, exec, readTextFile, writeTextFile, appHome, watchFolder, theme, settings, nextCommand, props, shared, setShared } from "herdr";
 import { tokenize, languageOf } from "./highlight.js";
 import { ask } from "./ask.js";
 import { palette } from "./palette.js";
 import { Dialog } from "./dialog.js";
 import { buildTree, visibleRows, gitInventory, fileLines } from "./files.js";
 import { documentBlocks, isMarkdown, MAX_BLOCKS } from "./markdown.js";
+import { diagram, imageKey } from "./diagram.js";
+import { DiagramViewer } from "./viewer.js";
+import { createDiagramCache } from "./diagram-cache.js";
 import { directory, openEditor } from "./workspace.js";
 import { log } from "./log.js";
 import { shortcutsPanel } from "./shortcuts.js";
-import { checking, layout } from "herdr";
+import { checking, layout, openOverlay } from "herdr";
 import { checkForUpdate } from "./update.js";
 
 function location() {
@@ -142,8 +145,10 @@ function fillGaps(lines, text) {
 export default class Changes extends View {
   init(_props, cx) {
     // Opened as the send dialog (ask.js): this copy is the dialog, nothing else.
+    if (props()?.viewer) { this.viewer = new DiagramViewer(); this.viewer.init(props().viewer, props().overlay); return; }
     if (props()?.dialog) { this.dialog = Object.create(Dialog.prototype); this.dialog.init(_props, cx); return; }
-    this.maximized = false; this.allFiles = false; this.plain = false; this.expanded = new Set(); this.doc = null; this.docView = new Map();
+    this.maximized = false; this.allFiles = false; this.plain = false; this.expanded = new Set(); this.doc = null; this.docView = new Map(); this.diagramSource = new Set(); this.diagramActual = new Set();
+    this.cacheDiagram = createDiagramCache({ appHome, readTextFile, writeTextFile }); this.redraw = () => cx.notify();
     this.tree = buildTree([], []); this.treeRows = []; this.workingView = false;
     if (!checking()) this.registerPanel();
     log("ready");
@@ -333,7 +338,7 @@ export default class Changes extends View {
       this.tree = buildTree([], []); this.treeRows = []; this.hasHead = false;
       this.folderWatch?.cancel();
       this.folderWatch = null;
-      this.context = context; this.doc = null; this.docView = new Map(); this.root = null; this.log = null; this.choosingScope = false; this.files = []; this.open = null; this.comments = []; this.composer = null;
+      this.context = context; this.doc = null; this.docView = new Map(); this.diagramSource = new Set(); this.diagramActual = new Set(); this.root = null; this.log = null; this.choosingScope = false; this.files = []; this.open = null; this.comments = []; this.composer = null;
       this.setLines([]); this.message = ""; this.input.set_value(""); this.error = null; this.note_ = null; this.gitNote = null; this.watched = null; this.closed = false; this.limited = false;
     }
     if (!cwd) return;
@@ -627,6 +632,7 @@ export default class Changes extends View {
     if (file.status && lines.length > (lines.some((l) => l[0] === "=") ? FILE_LINES + DIFF_LINES : DIFF_LINES)) lines = lines.slice(0, DIFF_LINES);
     if (this.loadTicket === ticket && key() === context && this.open === path && scope === this.scopeId() && range === this.range) this.setLines(lines.map(line => line.length > 4000 ? line.slice(0, 4000) + "… (line truncated)" : line), path);
     if (this.loadTicket === ticket && key() === context && this.open === path && scope === this.scopeId() && range === this.range) this.doc = isMarkdown(path) && typeof source === "string" && source.length <= 400000 ? this.splitDocument(path, source) : null;
+    if (this.doc) this.renderDiagrams(this.doc, context);
   }
 
   // The text of a changed Markdown file for the document view: the picked commit's
@@ -638,6 +644,36 @@ export default class Changes extends View {
       return r?.code === 0 ? r.stdout : null;
     }
     return readTextFile(`${this.root}/${path}`, { on: this.on }).catch(() => null);
+  }
+
+  // Mermaid fences become pictures, one at a time so the panel stays usable. A diagram that is
+  // not supported, too big or has a syntax error stays what it was: commentable source.
+  async renderDiagrams(doc, context) {
+    const t = theme();
+    for (const block of doc.blocks.filter((b) => b.kind === "mermaid").slice(0, 20)) {
+      await Promise.resolve(); // let the first frame show the source
+      if (this.doc !== doc || key() !== context) return;
+      try {
+        const graphic = diagram(block.body, t);
+        if (!graphic) continue;
+        const asset = await this.cacheDiagram(imageKey(graphic.svg), graphic.svg);
+        if (this.doc !== doc) return;
+        block.image = { asset, width: graphic.width, height: graphic.height };
+        log("render");
+      } catch (error) { log("render", error); }
+      this.redraw();
+    }
+  }
+
+  // Shows a drawn diagram in its own overlay (viewer.js), only when asked for.
+  popOut(block, where) {
+    if (!block.image) return;
+    try {
+      openOverlay({
+        mod: "reviewer", kind: "dialog", width: 0.9, height: 0.88,
+        props: { viewer: { ...block.image, title: `${this.open} · ${where}` } },
+      });
+    } catch (error) { log("render", error); }
   }
 
   splitDocument(path, text) {
@@ -688,17 +724,35 @@ export default class Changes extends View {
       .child(c.id === editing ? this.noteText : c.text);
     const link = (id, label, action) => div().id(id).h(22).px(8).flex().items_center().rounded(6).text_size(11).text_color(t.dim).cursor_pointer().hover((s) => s.bg(t.hover).text_color(t.foreground)).on_click(action).child(label);
     return v_flex().id("reviewer-document").size_full().min_h(0).overflow_y_scrollbar().p(10).gap(8)
+      // The room a diagram has inside its card: the panel minus the paddings and the card's border.
+      .on_size_change((size, cx) => { const w = Math.max(120, Math.floor(size.width - 40)); if (w !== this.docWidth) { this.docWidth = w; cx.notify(); } })
       .children(top.map(card))
       .children(blocks.map((block, i) => {
         const id = `doc-${block.start}`, active = open && open.from.number === block.start && open.to.number === block.end;
         const where = block.start === block.end ? `Line ${block.start}` : `Lines ${block.start}–${block.end}`;
-        const label = block.kind === "metadata" ? `Frontmatter · ${where.toLowerCase()}` : block.kind === "mermaid" ? `Mermaid source · ${where.toLowerCase()}` : where;
+        const graphic = block.image, flip = `${this.open}:${block.start}`, showSource = !graphic || this.diagramSource.has(flip);
+        const label = block.kind === "metadata" ? `Frontmatter · ${where.toLowerCase()}` : block.kind === "mermaid" ? `Mermaid ${showSource ? "source" : "diagram"} · ${where.toLowerCase()}` : where;
+        // A diagram is fitted to the card's width; "Actual size" shows it unscaled, scrolling sideways.
+        const room = this.docWidth ?? 400, wide = Boolean(graphic) && graphic.width > room, actual = wide && this.diagramActual.has(flip);
+        // Fitting never shrinks below 60%: smaller text is unreadable, so a very wide diagram scrolls sideways instead.
+        const width = graphic ? (actual ? graphic.width : Math.max(Math.min(graphic.width, room), Math.round(graphic.width * 0.6))) : 0;
         const body = block.kind === "metadata" ? "~~~yaml\n" + block.body + "\n~~~" : block.text;
         return v_flex().id(id).flex_none().gap(6).p(8).rounded(7).border_1().border_color(active ? t.accent : t.border)
           .child(h_flex().items_center().gap(6)
             .child(div().flex_1().min_w(0).text_size(11).text_color(t.dim).child(label))
+            .when(Boolean(graphic) && !showSource, (row) => row.child(link(`${id}-pop`, "Pop out", () => this.popOut(block, where))))
+            .when(wide && !showSource, (row) => row.child(link(`${id}-size`, actual ? "Fit" : "Actual size", (_e, cx) => {
+              if (this.diagramActual.has(flip)) this.diagramActual.delete(flip); else this.diagramActual.add(flip);
+              cx.notify();
+            })))
+            .when(Boolean(graphic), (row) => row.child(link(`${id}-flip`, showSource ? "Diagram" : "Source", (_e, cx) => {
+              if (this.diagramSource.has(flip)) this.diagramSource.delete(flip); else this.diagramSource.add(flip);
+              cx.notify();
+            })))
             .child(link(`${id}-comment`, "Comment", (_e, cx) => this.commentBlock(block, cx))))
-          .child(TextView.markdown(id + "-text", body))
+          .child(showSource ? TextView.markdown(id + "-text", body)
+            : div().id(`${id}-picture`).w_full().min_w(0).overflow_x_scrollbar()
+              .child(image(graphic.asset).w(width).h(width * graphic.height / graphic.width).flex_none()))
           .children((under.get(i) ?? []).map(card));
       }));
   }
@@ -1104,6 +1158,7 @@ export default class Changes extends View {
   }
 
   renderPanel(cx) {
+    if (this.viewer) return this.viewer.render(cx);
     if (this.dialog) return this.dialog.render(cx);
     const request = shared(OPEN);
     if (request != null && this.stale(request)) cx.timer.after(1, () => setShared(OPEN, null));

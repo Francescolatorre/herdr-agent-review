@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { execFileSync, spawnSync } from "node:child_process";
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { register } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -60,7 +60,7 @@ test("review follows the focused folder and preserves the quoted snapshot", asyn
   const sha = git("rev-parse", "HEAD");
   writeFileSync(join(repo, "changed.txt"), "modified\n");
   writeFileSync(join(ordinary, "note.txt"), "standalone\n");
-  let cwd = repo, sent, launched;
+  let cwd = repo, sent, launched, overlay;
   const state = new Map(), no = () => {};
   const host = {
     View: class {}, shared: k => state.get(k), setShared: (k,v) => state.set(k,v),
@@ -69,9 +69,11 @@ test("review follows the focused folder and preserves the quoted snapshot", asyn
     window: () => ({ platform: process.platform === "win32" ? "windows" : "linux" }),
     watchFolder: () => Object.assign(new Promise(no), { cancel: no }),
     nextCommand: () => new Promise(no),
-    openOverlay: options => { sent = options.props.context; },
+    openOverlay: options => { overlay = options; sent = options.props.context; },
     run: (command, options) => { assert.equal(command, "tab.new"); launched = options; },
-    readTextFile: path => Promise.resolve(readFileSync(path, "utf8")),
+    appHome: () => join(temp, "home"), theme: () => ({ background: "#101010", foreground: "#eeeeee" }),
+    readTextFile: path => Promise.resolve(existsSync(path) ? readFileSync(path, "utf8") : null),
+    writeTextFile: (path, text) => { mkdirSync(join(path, ".."), { recursive: true }); writeFileSync(path, text); return Promise.resolve(null); },
     exec: async (cmd, args, opts) => {
       const r = spawnSync(cmd, args, { cwd: opts.cwd, encoding: "utf8" });
       if (r.error) throw r.error;
@@ -83,8 +85,8 @@ test("review follows the focused folder and preserves the quoted snapshot", asyn
   };
   globalThis.reviewerTestHost = host;
   const hostModules = {
-    herdr: "appHome spaces panes focused exec readTextFile watchFolder theme settings nextCommand props shared setShared checking layout run window notify openOverlay agents knownAgents hc closeOverlay keys",
-    "gpui-kit": "View div svg",
+    herdr: "appHome writeTextFile spaces panes focused exec readTextFile watchFolder theme settings nextCommand props shared setShared checking layout run window notify openOverlay agents knownAgents hc closeOverlay keys",
+    "gpui-kit": "View div svg image",
     "gpui-base": "v_flex h_flex TextView InputState Input TextareaState Textarea Scrollbar v_virtual_list VirtualListScrollHandle Popover v_resizable resizable_panel"
   };
   // Register a loader in this test process using the Node 20/22 API.
@@ -134,6 +136,13 @@ test("review follows the focused folder and preserves the quoted snapshot", asyn
   panel.open = "plan.md"; await panel.load("plan.md", panel.context);
   assert.deepEqual(panel.doc.blocks.map(b => [b.kind, b.start, b.end]), [["metadata", 1, 3], ["markdown", 5, 6], ["mermaid", 8, 11]]);
   assert(panel.documentShown(), "an unchanged Markdown file opens as a document");
+  for (let i = 0; i < 50 && !panel.doc.blocks[2].image; i++) await new Promise(r => setTimeout(r, 20));
+  const picture = panel.doc.blocks[2].image;
+  assert(picture.asset.startsWith("data/reviewer-mermaid/") && picture.asset.endsWith(".svg"), "the Mermaid block is drawn");
+  assert.match(readFileSync(join(temp, "home", picture.asset), "utf8"), /<svg/);
+  panel.popOut(panel.doc.blocks[2], "Lines 8–11");
+  assert.equal(overlay.props.viewer.asset, picture.asset, "Pop out opens the diagram in an overlay");
+  assert(overlay.props.viewer.title.startsWith("plan.md"));
   panel.commentBlock(panel.doc.blocks[1], cx);
   assert.equal(panel.composer.doc, true);
   panel.note.set_value("name the goal"); panel.addComment(cx);
