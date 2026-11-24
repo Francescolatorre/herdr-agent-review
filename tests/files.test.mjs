@@ -60,7 +60,7 @@ test("review follows the focused folder and preserves the quoted snapshot", asyn
   const sha = git("rev-parse", "HEAD");
   writeFileSync(join(repo, "changed.txt"), "modified\n");
   writeFileSync(join(ordinary, "note.txt"), "standalone\n");
-  let cwd = repo, sent, launched;
+  let cwd = repo, sent, launched, overlay;
   const state = new Map(), no = () => {};
   const host = {
     View: class {}, shared: k => state.get(k), setShared: (k,v) => state.set(k,v),
@@ -69,7 +69,7 @@ test("review follows the focused folder and preserves the quoted snapshot", asyn
     window: () => ({ platform: process.platform === "win32" ? "windows" : "linux" }),
     watchFolder: () => Object.assign(new Promise(no), { cancel: no }),
     nextCommand: () => new Promise(no),
-    openOverlay: options => { sent = options.props.context; },
+    openOverlay: options => { overlay = options; sent = options.props.context; },
     run: (command, options) => { assert.equal(command, "tab.new"); launched = options; },
     appHome: () => join(temp, "home"), theme: () => ({ background: "#101010", foreground: "#eeeeee" }),
     readTextFile: path => Promise.resolve(existsSync(path) ? readFileSync(path, "utf8") : null),
@@ -140,6 +140,9 @@ test("review follows the focused folder and preserves the quoted snapshot", asyn
   const picture = panel.doc.blocks[2].image;
   assert(picture.asset.startsWith("data/reviewer-mermaid/") && picture.asset.endsWith(".svg"), "the Mermaid block is drawn");
   assert.match(readFileSync(join(temp, "home", picture.asset), "utf8"), /<svg/);
+  panel.popOut(panel.doc.blocks[2], "Lines 8–11");
+  assert.equal(overlay.props.viewer.asset, picture.asset, "Pop out opens the diagram in an overlay");
+  assert(overlay.props.viewer.title.startsWith("plan.md"));
   panel.commentBlock(panel.doc.blocks[1], cx);
   assert.equal(panel.composer.doc, true);
   panel.note.set_value("name the goal"); panel.addComment(cx);

@@ -46,11 +46,12 @@ import { Dialog } from "./dialog.js";
 import { buildTree, visibleRows, gitInventory, fileLines } from "./files.js";
 import { documentBlocks, isMarkdown, MAX_BLOCKS } from "./markdown.js";
 import { diagram, imageKey } from "./diagram.js";
+import { DiagramViewer } from "./viewer.js";
 import { createDiagramCache } from "./diagram-cache.js";
 import { directory, openEditor } from "./workspace.js";
 import { log } from "./log.js";
 import { shortcutsPanel } from "./shortcuts.js";
-import { checking, layout } from "herdr";
+import { checking, layout, openOverlay } from "herdr";
 import { checkForUpdate } from "./update.js";
 
 function location() {
@@ -144,6 +145,7 @@ function fillGaps(lines, text) {
 export default class Changes extends View {
   init(_props, cx) {
     // Opened as the send dialog (ask.js): this copy is the dialog, nothing else.
+    if (props()?.viewer) { this.viewer = new DiagramViewer(); this.viewer.init(props().viewer, props().overlay); return; }
     if (props()?.dialog) { this.dialog = Object.create(Dialog.prototype); this.dialog.init(_props, cx); return; }
     this.maximized = false; this.allFiles = false; this.plain = false; this.expanded = new Set(); this.doc = null; this.docView = new Map(); this.diagramSource = new Set(); this.diagramActual = new Set();
     this.cacheDiagram = createDiagramCache({ appHome, readTextFile, writeTextFile }); this.redraw = () => cx.notify();
@@ -663,6 +665,17 @@ export default class Changes extends View {
     }
   }
 
+  // Shows a drawn diagram in its own overlay (viewer.js), only when asked for.
+  popOut(block, where) {
+    if (!block.image) return;
+    try {
+      openOverlay({
+        mod: "reviewer", kind: "dialog", width: 0.9, height: 0.88,
+        props: { viewer: { ...block.image, title: `${this.open} · ${where}` } },
+      });
+    } catch (error) { log("render", error); }
+  }
+
   splitDocument(path, text) {
     if (text.includes("\0")) return null;
     const blocks = documentBlocks(text);
@@ -727,6 +740,7 @@ export default class Changes extends View {
         return v_flex().id(id).flex_none().gap(6).p(8).rounded(7).border_1().border_color(active ? t.accent : t.border)
           .child(h_flex().items_center().gap(6)
             .child(div().flex_1().min_w(0).text_size(11).text_color(t.dim).child(label))
+            .when(Boolean(graphic) && !showSource, (row) => row.child(link(`${id}-pop`, "Pop out", () => this.popOut(block, where))))
             .when(wide && !showSource, (row) => row.child(link(`${id}-size`, actual ? "Fit" : "Actual size", (_e, cx) => {
               if (this.diagramActual.has(flip)) this.diagramActual.delete(flip); else this.diagramActual.add(flip);
               cx.notify();
@@ -1130,6 +1144,7 @@ export default class Changes extends View {
   }
 
   renderPanel(cx) {
+    if (this.viewer) return this.viewer.render(cx);
     if (this.dialog) return this.dialog.render(cx);
     const request = shared(OPEN);
     if (request != null && this.stale(request)) cx.timer.after(1, () => setShared(OPEN, null));

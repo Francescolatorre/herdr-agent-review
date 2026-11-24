@@ -45,7 +45,8 @@ in [LICENSE](LICENSE); see [Versions](#versions) for how its releases are counte
   XY chart) is drawn as a diagram, rendered locally; **Source** shows its
   text, and a diagram that cannot be drawn stays as source. A diagram is
   fitted to the panel's width (not below 60%); a wider one scrolls sideways,
-  and **Actual size** shows it unscaled. A changed Markdown
+  and **Actual size** shows it unscaled. **Pop out** opens the diagram in its
+  own large window, on request only. A changed Markdown
   file opens as its diff; **Preview** and **Source** switch between the two.
   A block comment is an ordinary line comment: it shows under its lines in
   the source view too, and goes into the same review. Files that split into
