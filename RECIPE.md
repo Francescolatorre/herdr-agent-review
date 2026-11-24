@@ -300,6 +300,22 @@ fill, `foreground` text at 13px. Top to bottom:
   request for another repo waits until the panel shows it; one older than
   30 seconds, or without `at`, is cleared unread.
 
+## Markdown as a document
+
+- Split a `.md` file into blocks with their original line ranges
+  (`mods/reviewer/markdown.js`): YAML frontmatter, Mermaid fences and, in
+  between, one block per paragraph, heading, list item, table or code fence
+  (cut at blank lines outside a fence). A block starts at its first and ends
+  at its last non-blank line. A fence nested in an indented list item stays
+  part of its text. Beyond 500 blocks, offer only the text view.
+- Render each block with `TextView.markdown`. Treat a comment on a block as an
+  ordinary line comment: `from` and `to` are context rows (`kind` " ") for the
+  block's first and last line, `quote` is its lines numbered like the source
+  view's. It then shows in both views and is sent like any other comment.
+  Put each comment under the block its last line belongs to.
+- Open an unchanged Markdown file as a document and a changed one as its
+  diff; remember the switch per file.
+
 ## Built from
 
 - In All files, merge the full scope's changes (including deletions) with
