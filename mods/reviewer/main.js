@@ -145,7 +145,7 @@ export default class Changes extends View {
   init(_props, cx) {
     // Opened as the send dialog (ask.js): this copy is the dialog, nothing else.
     if (props()?.dialog) { this.dialog = Object.create(Dialog.prototype); this.dialog.init(_props, cx); return; }
-    this.maximized = false; this.allFiles = false; this.plain = false; this.expanded = new Set(); this.doc = null; this.docView = new Map(); this.diagramSource = new Set();
+    this.maximized = false; this.allFiles = false; this.plain = false; this.expanded = new Set(); this.doc = null; this.docView = new Map(); this.diagramSource = new Set(); this.diagramActual = new Set();
     this.cacheDiagram = createDiagramCache({ appHome, readTextFile, writeTextFile }); this.redraw = () => cx.notify();
     this.tree = buildTree([], []); this.treeRows = []; this.workingView = false;
     if (!checking()) this.registerPanel();
@@ -336,7 +336,7 @@ export default class Changes extends View {
       this.tree = buildTree([], []); this.treeRows = []; this.hasHead = false;
       this.folderWatch?.cancel();
       this.folderWatch = null;
-      this.context = context; this.doc = null; this.docView = new Map(); this.diagramSource = new Set(); this.root = null; this.log = null; this.choosingScope = false; this.files = []; this.open = null; this.comments = []; this.composer = null;
+      this.context = context; this.doc = null; this.docView = new Map(); this.diagramSource = new Set(); this.diagramActual = new Set(); this.root = null; this.log = null; this.choosingScope = false; this.files = []; this.open = null; this.comments = []; this.composer = null;
       this.setLines([]); this.message = ""; this.input.set_value(""); this.error = null; this.note_ = null; this.gitNote = null; this.watched = null; this.closed = false; this.limited = false;
     }
     if (!cwd) return;
@@ -711,23 +711,34 @@ export default class Changes extends View {
       .child(c.id === editing ? this.noteText : c.text);
     const link = (id, label, action) => div().id(id).h(22).px(8).flex().items_center().rounded(6).text_size(11).text_color(t.dim).cursor_pointer().hover((s) => s.bg(t.hover).text_color(t.foreground)).on_click(action).child(label);
     return v_flex().id("reviewer-document").size_full().min_h(0).overflow_y_scrollbar().p(10).gap(8)
+      // The room a diagram has inside its card: the panel minus the paddings and the card's border.
+      .on_size_change((size, cx) => { const w = Math.max(120, Math.floor(size.width - 40)); if (w !== this.docWidth) { this.docWidth = w; cx.notify(); } })
       .children(top.map(card))
       .children(blocks.map((block, i) => {
         const id = `doc-${block.start}`, active = open && open.from.number === block.start && open.to.number === block.end;
         const where = block.start === block.end ? `Line ${block.start}` : `Lines ${block.start}–${block.end}`;
         const graphic = block.image, flip = `${this.open}:${block.start}`, showSource = !graphic || this.diagramSource.has(flip);
         const label = block.kind === "metadata" ? `Frontmatter · ${where.toLowerCase()}` : block.kind === "mermaid" ? `Mermaid ${showSource ? "source" : "diagram"} · ${where.toLowerCase()}` : where;
-        const width = graphic ? Math.min(graphic.width, 640) : 0;
+        // A diagram is fitted to the card's width; "Actual size" shows it unscaled, scrolling sideways.
+        const room = this.docWidth ?? 400, wide = Boolean(graphic) && graphic.width > room, actual = wide && this.diagramActual.has(flip);
+        // Fitting never shrinks below 60%: smaller text is unreadable, so a very wide diagram scrolls sideways instead.
+        const width = graphic ? (actual ? graphic.width : Math.max(Math.min(graphic.width, room), Math.round(graphic.width * 0.6))) : 0;
         const body = block.kind === "metadata" ? "~~~yaml\n" + block.body + "\n~~~" : block.text;
         return v_flex().id(id).flex_none().gap(6).p(8).rounded(7).border_1().border_color(active ? t.accent : t.border)
           .child(h_flex().items_center().gap(6)
             .child(div().flex_1().min_w(0).text_size(11).text_color(t.dim).child(label))
+            .when(wide && !showSource, (row) => row.child(link(`${id}-size`, actual ? "Fit" : "Actual size", (_e, cx) => {
+              if (this.diagramActual.has(flip)) this.diagramActual.delete(flip); else this.diagramActual.add(flip);
+              cx.notify();
+            })))
             .when(Boolean(graphic), (row) => row.child(link(`${id}-flip`, showSource ? "Diagram" : "Source", (_e, cx) => {
               if (this.diagramSource.has(flip)) this.diagramSource.delete(flip); else this.diagramSource.add(flip);
               cx.notify();
             })))
             .child(link(`${id}-comment`, "Comment", (_e, cx) => this.commentBlock(block, cx))))
-          .child(showSource ? TextView.markdown(id + "-text", body) : image(graphic.asset).w(width).h(width * graphic.height / graphic.width).flex_none())
+          .child(showSource ? TextView.markdown(id + "-text", body)
+            : div().id(`${id}-picture`).w_full().min_w(0).overflow_x_scrollbar()
+              .child(image(graphic.asset).w(width).h(width * graphic.height / graphic.width).flex_none()))
           .children((under.get(i) ?? []).map(card));
       }));
   }
