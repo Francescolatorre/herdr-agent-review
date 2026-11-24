@@ -37,11 +37,13 @@ export class DiagramViewer {
     this.pan(0, 0);
     // A picture smaller than the box sits in its middle.
     const left = w <= room.width ? (room.width - w) / 2 : -this.x, top = h <= room.height ? (room.height - h) / 2 : -this.y;
+    // The open hand over the picture, the closed one while it is held; also over the picture itself.
+    const hand = (e) => !movable ? e : this.drag ? e.cursor_grabbing() : e.cursor_grab();
     const box = div().id("viewer-view").flex_1().min_h(0).min_w(0).relative().overflow_hidden()
       .on_size_change((size, cx) => {
         if (size.width !== this.view?.width || size.height !== this.view?.height) { this.view = { width: size.width, height: size.height }; this.pan(0, 0); cx.notify(); }
       })
-      .when(movable, (e) => (this.drag ? e.cursor_grabbing() : e.cursor_grab())
+      .when(movable, (e) => hand(e)
         .on_mouse_down("left", (ev, cx) => { this.drag = { x: ev.position.x, y: ev.position.y }; cx.notify(); })
         .on_mouse_move((ev, cx) => {
           if (!this.drag) return;
@@ -51,8 +53,9 @@ export class DiagramViewer {
         })
         .on_mouse_up("left", (_ev, cx) => { this.drag = null; cx.notify(); })
         .on_scroll_wheel((ev, cx) => { this.pan(-ev.delta.x, -ev.delta.y); cx.notify(); }))
-      .child(image(asset).absolute().left(left).top(top).w(w).h(h));
-    return v_flex().size_full().bg(t.background).text_color(t.foreground)
+      .child(hand(image(asset).absolute().left(left).top(top).w(w).h(h)));
+    // While the picture is held the closed hand stays wherever the pointer goes.
+    return (this.drag ? v_flex().cursor_grabbing() : v_flex()).size_full().bg(t.background).text_color(t.foreground)
       .child(h_flex().h(42).flex_none().px(14).gap(8).items_center().border_b(1).border_color(t.border)
         .child(div().flex_1().min_w(0).truncate().font_semibold().child(title ?? "Diagram"))
         .child(div().text_size(11).text_color(t.dim).child(movable ? "Drag to move" : ""))
