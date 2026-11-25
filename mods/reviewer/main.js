@@ -1091,13 +1091,25 @@ export default class Changes extends View {
     } catch (error) { log("pr.dialog", error); }
   }
 
-  // Shown while a pull/merge request is open: which one, and a click for its description.
+  // The header's way in without a key: "Pull request…" opens the dialog; while a request is
+  // open it reads "PR #N" (or "MR !N") and opens the same dialog, to read or close it.
+  prButton(t, compact) {
+    const pin = pinned(), open = Boolean(pin && pin.root === this.root);
+    const label = open ? pin.label : compact ? "PR…" : "Pull request…";
+    return h_flex().id("pr-button").h(24).px(8).flex_none().max_w(compact ? 90 : 130).items_center().rounded(6).border_1()
+      .border_color(open ? t.accent : t.border).bg(open ? t.accent + "22" : t.raised).text_color(open ? t.accent : t.foreground).cursor_pointer().hover((s) => s.bg(t.hover))
+      .tooltip(open ? `${pin.info?.title ?? pin.label}: description, or close this request` : "Review a pull or merge request in a separate worktree")
+      .on_click(() => this.openPrDialog())
+      .child(div().text_size(12).truncate().child(label));
+  }
+
+  // Shown while a pull/merge request is open: its title (the header's button is the control).
   prLine(t) {
     const pin = pinned();
-    return h_flex().id("pr-line").px(14).pb(8).gap(6).items_center().min_w(0).text_size(11).cursor_pointer().on_click(() => this.openPrDialog())
-      .tooltip(`${pin.info?.title ?? pin.label} · click for the description or to close this request`)
-      .child(div().flex_none().px(6).py(1).rounded(4).bg(t.accent + "22").text_color(t.accent).font_semibold().child(pin.label))
-      .child(div().flex_1().min_w(0).truncate().text_color(t.muted).child(pin.info?.title || `vs ${pin.base}`));
+    return h_flex().id("pr-line").px(14).pb(8).gap(6).items_center().min_w(0).text_size(11)
+      .tooltip(pin.info?.title ?? pin.label)
+      .child(div().flex_none().text_color(t.accent).font_semibold().child("Request"))
+      .child(div().flex_1().min_w(0).truncate().text_color(t.muted).child(pin.info?.title || `against ${pin.base}`));
   }
 
   // A panel under 600px has no room for a column beside the diff.
@@ -1259,6 +1271,7 @@ export default class Changes extends View {
           .child(link("show-shortcuts", "Shortcuts", (_e, cx) => this.toggleShortcuts(cx)).tooltip("Keyboard shortcuts (F1)"))
           .when(!compact && !this.allFiles, (e) => e.child(div().h(24).px(8).flex().items_center().rounded(6).border_1().border_color(t.border).text_size(12).text_color(t.muted).child(`${this.files.length} files`)))
           .when(Boolean(this.root) && this.hasHead, (e) => e.child(this.scopePicker(t)))
+          .when(Boolean(this.root) && !this.plain, (e) => e.child(this.prButton(t, compact)))
           .child(div().flex_1())
           .when(Boolean(listLength && this.open), el => el.child(
             button("maximize-preview", this.maximized ? restoreLabel : "⛶", false, (_event, cx) => {

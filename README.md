@@ -54,7 +54,11 @@ in [LICENSE](LICENSE); see [Versions](#versions) for how its releases are counte
   A block comment is an ordinary line comment: it shows under its lines in
   the source view too, and goes into the same review. Files that split into
   more than 500 blocks open as text only.
-- **Pull and merge requests.** `ctrl-shift-o` (`reviewer.pr`) lists the
+- **Pull and merge requests.** The **Pull request…** button in the header
+  (next to the scope picker; **PR…** in a narrow panel, **PR #N** or **MR !N**
+  while one is open) opens the dialog, so no key is needed. The key
+  `ctrl-shift-o` (`reviewer.pr`) is optional: the installer skips it where
+  you have bound it already. The dialog lists the
   project's open requests (needs `gh` or `glab`, logged in): by default those
   waiting for your review, or **All open**; the choice is remembered. A click
   opens one. For any other request, including closed ones, enter a link or

@@ -431,9 +431,15 @@ fill, `foreground` text at 13px. Top to bottom:
   `notes`); while it is set `location()` returns its worktree `root`, so the
   panel follows it wherever the focus is, `scopes()` uses `pin.base` against
   `origin/<base>` (and `pin.label` as the branch name), and opening sets the
-  worktree's remembered scope (`reviewer.scope`) to `branch`. The header
-  shows a `prLine` (label + title) that opens the dialog. Key command:
-  `reviewer.pr` (`ctrl-shift-o`).
+  worktree's remembered scope (`reviewer.scope`) to `branch`. The way in
+  without a key is `prButton` in the panel header, right after the scope
+  picker, shown whenever a repo is shown (not in plain-folder mode): "Pull
+  request…" ("PR…" under 600 px), or the open request's label ("PR #N" /
+  "MR !N", accent-colored) while one is open; it calls `openPrDialog()`.
+  While a request is open the folder block also shows a `prLine` with its
+  title, read-only (the button is the only control). Key command:
+  `reviewer.pr` (`ctrl-shift-o`), optional: the installer leaves it out where
+  the key is taken.
   The dialog also lists the open requests, read when it opens:
   `listRequests({ exec, cwd, on, mine })` finds the repo and origin as above and runs
   `gh pr list --state open --limit 50 [--repo …] --json number,title,author,isDraft,
