@@ -6,6 +6,7 @@ const actions = [
   ["mod.open:reviewer-toggle", "Show or hide Reviewer"],
   ["reviewer.shortcuts", "Show or hide shortcuts"],
   ["reviewer.scope", "Cycle comparison"],
+  ["reviewer.pr", "Open a pull or merge request"],
   ["reviewer.ask", "Ask about the open file"],
   ["reviewer.submit", "Review draft comments"],
   ["reviewer.clear", "Discard draft comments"],

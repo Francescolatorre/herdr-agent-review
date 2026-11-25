@@ -28,6 +28,10 @@
 // itself, to select no file; `ref` (a commit-ish) switches to reviewing that
 // commit on its own first. A request older than OPEN_TTL
 // is dropped unread, so a stale one never fires when the repo gets focus later.
+// "reviewer.pr" opens a dialog (prdialog.js) for a pull request (GitHub) or merge
+// request (GitLab): give it a link or number and the panel reviews that request's
+// whole diff in a separate worktree (pr.js), with its description. The open request
+// is shared "reviewer.pr"; closing it removes the worktree.
 // The header's scope picker chooses what is reviewed: the uncommitted
 // changes, the last commit plus them, everything on the branch since it
 // left its base (the pull-request view), or any one commit from the log on
@@ -43,6 +47,7 @@ import { tokenize, languageOf } from "./highlight.js";
 import { ask } from "./ask.js";
 import { palette } from "./palette.js";
 import { Dialog } from "./dialog.js";
+import { PrDialog, pinned } from "./prdialog.js";
 import { buildTree, visibleRows, gitInventory, fileLines } from "./files.js";
 import { documentBlocks, isMarkdown, MAX_BLOCKS } from "./markdown.js";
 import { diagram, imageKey } from "./diagram.js";
@@ -56,6 +61,9 @@ import { checkForUpdate } from "./update.js";
 
 function location() {
   const space = spaces().find((s) => s.active), f = focused();
+  // An open pull/merge request pins the panel to its worktree, wherever the focus is.
+  const pin = pinned();
+  if (pin) return { cwd: pin.root, on: pin.on ?? null, space: space?.id };
   const pane = f?.pane ? panes().find(p => p.pane === f.pane) : null;
   const on = f?.pane === null ? (f.terminal?.includes("/") ? f.terminal.split("/")[0] : null) : space?.machine ?? null;
   return { cwd: pane?.cwd || f?.cwd || space?.folder, on, space: space?.id };
@@ -146,6 +154,7 @@ export default class Changes extends View {
   init(_props, cx) {
     // Opened as the send dialog (ask.js): this copy is the dialog, nothing else.
     if (props()?.viewer) { this.viewer = new DiagramViewer(); this.viewer.init(props().viewer, props().overlay); return; }
+    if (props()?.prDialog) { this.prDialog = new PrDialog(); this.prDialog.init(_props, cx); return; }
     if (props()?.dialog) { this.dialog = Object.create(Dialog.prototype); this.dialog.init(_props, cx); return; }
     this.maximized = false; this.allFiles = false; this.plain = false; this.expanded = new Set(); this.doc = null; this.docView = new Map(); this.diagramSource = new Set(); this.diagramActual = new Set();
     this.cacheDiagram = createDiagramCache({ appHome, readTextFile, writeTextFile }); this.redraw = () => cx.notify();
@@ -183,6 +192,7 @@ export default class Changes extends View {
         else if (c === "clear") this.setComments([], cx);
         else if (c === "scope") this.cycleScope(cx);
         else if (c === "full") this.toggleFull(cx);
+        else if (c === "pr") this.openPrDialog();
         cx.notify();
       }
     });
@@ -371,7 +381,7 @@ export default class Changes extends View {
         }
         const remembered = (shared(SCOPE) ?? {})[scopeKey];
         let [scope, sha] = wanted ? ["commit", wanted] : root === this.root ? [this.scope, this.sha] : remembered?.startsWith("commit:") ? ["commit", remembered.slice(7)] : [remembered ?? null, null];
-        const info = hasHead ? await this.scopes(git, scope === "commit" ? sha : null) : { branch: null, base: null, last: null, merge: null, commit: null };
+        const info = hasHead ? await this.scopes(git, scope === "commit" ? sha : null, pinned()?.root === root && (pinned()?.on ?? null) === (on ?? null) ? pinned() : null) : { branch: null, base: null, last: null, merge: null, commit: null };
         if (!scope || scope === "folder") scope = "work";
         if (scope === "branch" && !info.merge) scope = "work";
         if (scope === "last" && !info.last) scope = "work";
@@ -505,15 +515,18 @@ export default class Changes extends View {
   // (props.base, else origin/HEAD, else main, else master), the merge
   // base with it (null when on the base itself), HEAD's short hash
   // when it has a parent, and the picked commit `sha` (null when it is gone).
-  async scopes(git, sha) {
+  // `pin`: the open pull/merge request when this repo is its worktree: its target
+  // branch is the base (as origin/<base>, just fetched) and its label stands for the branch.
+  async scopes(git, sha, pin = null) {
     const out = async (args) => { const r = await git(args); return r.code === 0 ? r.stdout.trim() : null; };
-    const branch = await out(["rev-parse", "--abbrev-ref", "HEAD"]);
-    let base = typeof props()?.base === "string" ? props().base : null;
+    const branch = pin ? pin.label : await out(["rev-parse", "--abbrev-ref", "HEAD"]);
+    let base = pin?.base ?? (typeof props()?.base === "string" ? props().base : null);
     if (!base) { const h = await out(["symbolic-ref", "-q", "refs/remotes/origin/HEAD"]); if (h) base = h.replace(/^refs\/remotes\/origin\//, ""); }
     if (!base) for (const b of ["main", "master"]) { if (await out(["rev-parse", "--verify", "-q", `refs/heads/${b}`]) !== null) { base = b; break; } }
     let merge = null;
     if (base && branch !== base) {
-      const baseRef = (await out(["rev-parse", "--verify", "-q", `refs/heads/${base}`])) !== null ? base : `origin/${base}`;
+      const remote = (await out(["rev-parse", "--verify", "-q", `refs/remotes/origin/${base}`])) !== null;
+      const baseRef = pin && remote ? `origin/${base}` : (await out(["rev-parse", "--verify", "-q", `refs/heads/${base}`])) !== null ? base : `origin/${base}`;
       merge = await out(["merge-base", baseRef, "HEAD"]);
       if (merge && (await out(["rev-parse", "HEAD"])) === merge) merge = null;
     }
@@ -1069,6 +1082,24 @@ export default class Changes extends View {
           .children(commits)));
   }
 
+  // The dialog for opening a pull/merge request, or reading and closing the open one.
+  openPrDialog() {
+    if (this.viewer || this.dialog || this.prDialog) return;
+    try {
+      const pin = pinned(), where = pin ? { cwd: pin.repo, on: pin.on ?? null } : { cwd: this.root ?? location().cwd, on: this.on ?? location().on };
+      openOverlay({ mod: "reviewer", kind: "dialog", width: 0.6, height: 0.8, props: { prDialog: where } });
+    } catch (error) { log("pr.dialog", error); }
+  }
+
+  // Shown while a pull/merge request is open: which one, and a click for its description.
+  prLine(t) {
+    const pin = pinned();
+    return h_flex().id("pr-line").px(14).pb(8).gap(6).items_center().min_w(0).text_size(11).cursor_pointer().on_click(() => this.openPrDialog())
+      .tooltip(`${pin.info?.title ?? pin.label} · click for the description or to close this request`)
+      .child(div().flex_none().px(6).py(1).rounded(4).bg(t.accent + "22").text_color(t.accent).font_semibold().child(pin.label))
+      .child(div().flex_1().min_w(0).truncate().text_color(t.muted).child(pin.info?.title || `vs ${pin.base}`));
+  }
+
   // A panel under 600px has no room for a column beside the diff.
   narrow() { return (this.size?.width ?? 368) < 600; }
 
@@ -1160,6 +1191,7 @@ export default class Changes extends View {
   renderPanel(cx) {
     if (this.viewer) return this.viewer.render(cx);
     if (this.dialog) return this.dialog.render(cx);
+    if (this.prDialog) return this.prDialog.render(cx);
     const request = shared(OPEN);
     if (request != null && this.stale(request)) cx.timer.after(1, () => setShared(OPEN, null));
     else if (key() !== this.context || (request?.id !== this.tried && this.requestedFile(request) !== null)) this.refresh(cx);
@@ -1239,6 +1271,7 @@ export default class Changes extends View {
             .child(svg(this.full() ? "mods/reviewer/fold-vertical.svg" : "mods/reviewer/unfold-vertical.svg").size(13))))
           .when(!compact, (e) => e.when(!this.plain, el => el.child(stats())).child(actions())))
         .when(Boolean(this.root), (e) => e.child(this.folderLine(t)))
+        .when(Boolean(this.root) && pinned()?.root === this.root, (e) => e.child(this.prLine(t)))
         .when(compact, (e) => e.child(h_flex().h(34).flex_none().px(14).gap(8).items_center()
           .when(!this.plain, el => el.child(stats())).child(div().flex_1()).child(actions()))))
       .when(Boolean(this.root), e => e.child(h_flex().flex_none().h(30).px(6).gap(2).items_center()

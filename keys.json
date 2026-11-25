@@ -4,6 +4,7 @@
     "ctrl-shift-f1": "reviewer.shortcuts",
     "ctrl-shift-enter": "reviewer.submit",
     "ctrl-shift-a": "reviewer.ask",
-    "ctrl-shift-s": "reviewer.scope"
+    "ctrl-shift-s": "reviewer.scope",
+    "ctrl-shift-o": "reviewer.pr"
   }
 }
