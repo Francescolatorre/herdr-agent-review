@@ -5,13 +5,17 @@
 // panel to it through shared "reviewer.pr"; while one is open it shows the
 // request's title, details and description and offers "Close request", which
 // takes the worktree away again. Enter opens, Esc closes the dialog.
+// Above the box it lists the project's open requests (read in the background when
+// the dialog opens, with gh / glab); a click opens one like its number would. The
+// filter "Review requested from me" (default) or "All open" is shared "reviewer.prFilter"
+// (false = all). Without gh/glab, a login or on any error the list says why and the box still works.
 import { div } from "gpui-kit";
 import { v_flex, h_flex, TextView, InputState, Input } from "gpui-base";
 import { exec, props, closeOverlay, theme, shared, setShared, notify } from "herdr";
 import { log } from "./log.js";
-import { openReview, closeReview } from "./pr.js";
+import { openReview, closeReview, listRequests } from "./pr.js";
 
-export const PR = "reviewer.pr", SCOPE = "reviewer.scope";
+export const PR = "reviewer.pr", SCOPE = "reviewer.scope", FILTER = "reviewer.prFilter";
 
 // The open request, if any (and well-formed): the panel reviews its worktree.
 export const pinned = () => { const p = shared(PR); return p && typeof p === "object" && typeof p.root === "string" ? p : null; };
@@ -26,6 +30,8 @@ export class PrDialog {
     this.input.on("submit", (_e, cx) => this.open(cx));
     this.input.focus();
     this.handle = cx.focus_handle();
+    this.list = null; this.listTicket = 0;
+    this.loadList(cx);
   }
 
   dismiss() { this.closed = true; closeOverlay(this.overlay); }
@@ -34,9 +40,34 @@ export class PrDialog {
   // Where git runs for opening: the repository the pinned request came from, else the panel's folder.
   where() { const p = pinned(); return p ? { cwd: p.repo, on: p.on ?? null } : { cwd: this.spec.cwd, on: this.spec.on ?? null }; }
 
-  open(cx) {
+  // The filter of the list of open requests, remembered: those waiting for my review (the default), or all open.
+  mine() { return shared(FILTER) !== false; }
+
+  // Reads the open requests in the background; the dialog stays usable meanwhile. A slower
+  // answer to an earlier filter is dropped.
+  loadList(cx) {
+    const { cwd, on } = this.where(), mine = this.mine(), ticket = ++this.listTicket;
+    this.list = { loading: true };
+    cx.spawn(async (cx) => {
+      let result;
+      try { result = await listRequests({ exec, cwd, on, mine }); }
+      catch (e) { log("pr.list", e); result = { ok: false, problem: String(e?.message ?? e).slice(0, 200) }; }
+      if (this.closed || ticket !== this.listTicket) return;
+      this.list = result;
+      cx.notify();
+    });
+    cx.notify();
+  }
+
+  setFilter(mine, cx) {
+    if (mine === this.mine()) return;
+    setShared(FILTER, mine);
+    this.loadList(cx);
+  }
+
+  open(cx, input = this.text) {
     if (this.busy || this.closed) return;
-    const { cwd, on } = this.where(), input = this.text;
+    const { cwd, on } = this.where();
     if (!cwd) { this.error = "No folder is shown to open a request from."; cx.notify(); return; }
     this.busy = "Fetching the request into a worktree…"; this.error = null; this.discard = false; cx.notify();
     cx.spawn(async (cx) => {
@@ -81,7 +112,20 @@ export class PrDialog {
     const button = (id, text, primary, action, disabled) => h_flex().id(id).h(32).px(14).items_center().rounded(8).border_1()
       .border_color(primary ? t.solid : t.input).bg(primary ? t.solid : t.raised).text_color(primary ? t.solid_foreground : t.foreground).text_size(12.5).font_medium()
       .when(disabled, (e) => e.opacity(0.5)).when(!disabled, (e) => e.cursor_pointer().hover((s) => s.opacity(0.88)).on_click(action)).child(text);
-    const meta = info ? [info.author && `by ${info.author}`, info.state, info.base && `into ${info.base}${info.head ? ` from ${info.head}` : ""}`, info.checks].filter(Boolean).join(" · ") : "";
+    const list = this.list, mine = this.mine();
+    const chip = (id, text, on, action) => h_flex().id(id).h(22).px(8).items_center().rounded(11).border_1().border_color(on ? t.accent : t.border)
+      .bg(on ? t.accent + "22" : t.raised).text_color(on ? t.accent : t.dim).text_size(11).cursor_pointer().hover((s) => s.opacity(0.85)).on_click(action).child(text);
+    // One open request: #number, title (with a draft mark), author · branch, review status. A click opens it.
+    const row = (r) => h_flex().id(`pr-row-${r.number}`).px(8).py(5).gap(8).items_center().rounded(6)
+      .when(!this.busy, (e) => e.cursor_pointer().hover((s) => s.bg(t.hover)).on_click((_e, cx) => this.open(cx, String(r.number))))
+      .when(Boolean(this.busy), (e) => e.opacity(0.5))
+      .tooltip(`${r.title}\n${r.author}${r.branch ? ` · ${r.branch}` : ""}`)
+      .child(div().flex_none().w(44).text_size(11.5).text_color(t.dim).child(`#${r.number}`))
+      .when(r.draft, (e) => e.child(div().flex_none().px(5).py(1).rounded(4).bg(t.raised).text_size(10).text_color(t.muted).child("draft")))
+      .child(div().flex_1().min_w(0).truncate().text_size(12).child(r.title))
+      .child(div().flex_none().max_w(200).truncate().text_size(10.5).text_color(t.dim).child([r.author, r.branch].filter(Boolean).join(" · ")))
+      .when(Boolean(r.review), (e) => e.child(div().flex_none().text_size(10.5).text_color(r.review === "approved" ? t.ansi2 : r.review === "changes requested" ? t.ansi1 : t.muted).child(r.review)));
+    const meta = info ?[info.author && `by ${info.author}`, info.state, info.base && `into ${info.base}${info.head ? ` from ${info.head}` : ""}`, info.checks].filter(Boolean).join(" · ") : "";
     return v_flex().id("pr-dialog").track_focus(this.handle)
       .on_key_down((e, cx) => { if (e.key === "escape") { this.dismiss(); cx.stop_propagation(); } })
       .size_full().min_h(0).p(18).gap(10).bg(t.popover).text_color(t.foreground).text_size(13)
@@ -100,6 +144,18 @@ export class PrDialog {
         .children((pin.notes ?? []).map((n) => div().text_size(11).text_color(t.blocked).whitespace_normal().child(n)))
         .child(div().text_size(11).text_color(t.dim).whitespace_normal().child(`Worktree ${pin.path} at ${pin.sha} · compared with origin/${pin.base} · your own checkout is untouched`))))
       .when(!pin, (el) => el.child(div().text_size(12).text_color(t.dim).whitespace_normal().child("Opens the request's code in a separate worktree and shows everything it changes against its target branch, with its description when gh or glab is available. Nothing is pushed or posted.")))
+      // The open requests of the project: a click opens one, the box below takes any other link or number.
+      .child(v_flex().when(!pin, (e) => e.flex_1()).min_h(90).max_h(pin ? 170 : 1000).gap(4)
+        .child(h_flex().gap(6).items_center()
+          .child(div().text_size(11.5).text_color(t.dim).child("Open requests"))
+          .child(div().flex_1())
+          .child(chip("pr-filter-mine", "Review requested from me", mine, (_e, cx) => this.setFilter(true, cx)))
+          .child(chip("pr-filter-all", "All open", !mine, (_e, cx) => this.setFilter(false, cx))))
+        .child(v_flex().id("pr-list").flex_1().min_h(0).overflow_y_scrollbar().gap(1).rounded(8).border_1().border_color(t.border).bg(t.background).p(4)
+          .when(!list || list.loading, (e) => e.child(div().px(8).py(6).text_size(11.5).text_color(t.dim).child("Loading open requests…")))
+          .when(Boolean(list && !list.loading && !list.ok), (e) => e.child(div().px(8).py(6).text_size(11.5).text_color(t.blocked).whitespace_normal().child(`${list.problem} You can still enter a link or number below.`)))
+          .when(Boolean(list?.ok && !list.items.length), (e) => e.child(div().px(8).py(6).text_size(11.5).text_color(t.dim).whitespace_normal().child(mine ? "Nothing is waiting for your review. Switch to All open, or enter a link or number below." : "No open requests.")))
+          .children(list?.ok ? list.items.map((r) => row(r)) : [])))
       .child(h_flex().gap(8).items_center()
         .child(div().id("pr-input").flex_1().min_w(0).h(32).px(10).flex().items_center().rounded(8).border_1().border_color(t.input).bg(t.background).cursor_text()
           .on_mouse_down("left", (_e, cx) => cx.stop_propagation()).child(Input.new(this.input).h_full().text_size(12.5).text_color(t.foreground)))

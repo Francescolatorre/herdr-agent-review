@@ -434,6 +434,21 @@ fill, `foreground` text at 13px. Top to bottom:
   worktree's remembered scope (`reviewer.scope`) to `branch`. The header
   shows a `prLine` (label + title) that opens the dialog. Key command:
   `reviewer.pr` (`ctrl-shift-o`).
+  The dialog also lists the open requests, read when it opens:
+  `listRequests({ exec, cwd, on, mine })` finds the repo and origin as above and runs
+  `gh pr list --state open --limit 50 [--repo …] --json number,title,author,isDraft,
+  headRefName,reviewDecision,updatedAt [--search review-requested:@me]` or `glab mr
+  list --per-page 50 [--repo …] --output json [--reviewer=@me]` (`listCommand`; 30 s
+  timeout, cwd and `on` as for everything else), and `normalizeList` makes rows
+  `{ number, title, author, branch, draft, review, updated }` (a GitLab draft is
+  `draft`, `work_in_progress` or a `Draft:` title; GitLab's list has no review
+  status). Result: `{ ok: true, items }` (an empty list is not an error) or
+  `{ ok: false, problem }`, worded by `cliProblem(cmd, null, …)`: not installed,
+  not logged in, project not found, anything else's first line, unreadable output.
+  The dialog shows "Loading…" while it runs and never blocks on it; a slower answer
+  to an earlier filter is dropped. A row click calls the same `open` as the number
+  box. The filter ("Review requested from me", default, or "All open") is shared
+  `reviewer.prFilter` (`false` = all open).
 - `ask.js`: `pickAgent(space)`, `ask({ title, context, sent, folder })` →
   opens this mod as a modal dialog overlay with props `{ dialog: true,
   title, context, sent, space, folder }` (the focused pane's space and

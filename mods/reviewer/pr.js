@@ -115,19 +115,49 @@ export function normalizeInfo(provider, data, url) {
 }
 
 // Why gh / glab gave nothing, in words for the person. Not fatal: the code can still be reviewed.
+// `number` is the request asked for, or null when the open requests were listed instead.
 export function cliProblem(cmd, number, result) {
   const text = `${result?.stderr ?? ""}\n${result?.stdout ?? ""}`.trim();
   const line = text.split(/\r?\n/).find((l) => l.trim())?.trim().slice(0, 160) ?? "";
+  const listing = number == null, outcome = listing ? "the list is empty" : "the description is not shown";
   if (!result || result.code === 127 || /command not found|not recognized|ENOENT|No such file|cannot find the (file|path)|is not installed/i.test(text)) {
-    return `\`${cmd}\` is not installed, so the description is not shown. Install it to read the title and description.`;
+    return `\`${cmd}\` is not installed, so ${outcome}. Install it to ${listing ? "list requests" : "read the title and description"}.`;
   }
   if (/auth login|not logged|authentication|unauthorized|\b401\b|\b403\b|bad credentials|GH_TOKEN|GITLAB_TOKEN/i.test(text)) {
-    return `\`${cmd}\` is not logged in for this host (run \`${cmd} auth login\`), so the description is not shown.${line ? ` (${line})` : ""}`;
+    return `\`${cmd}\` is not logged in for this host (run \`${cmd} auth login\`), so ${outcome}.${line ? ` (${line})` : ""}`;
   }
   if (/could not resolve|no pull requests? found|no merge requests? found|\b404\b|not found/i.test(text)) {
-    return `#${number} was not found on the host (wrong number, or no access).${line ? ` (${line})` : ""}`;
+    return listing ? `The project was not found on the host (or no access).${line ? ` (${line})` : ""}`
+      : `#${number} was not found on the host (wrong number, or no access).${line ? ` (${line})` : ""}`;
   }
-  return `\`${cmd}\` could not read the description${line ? `: ${line}` : ""}.`;
+  return `\`${cmd}\` could not ${listing ? "list the requests" : "read the description"}${line ? `: ${line}` : ""}.`;
+}
+
+// ---- the open requests of the project ------------------------------------------
+
+const REVIEW = { APPROVED: "approved", CHANGES_REQUESTED: "changes requested", REVIEW_REQUIRED: "review required" };
+export const LIST_LIMIT = 50;
+
+// `gh pr list --json` and `glab mr list --output json`, in one row shape:
+// { number, title, author, branch, draft, review, updated }.
+export function normalizeList(provider, data) {
+  if (!Array.isArray(data)) return [];
+  return data.map((d) => provider === "github" ? {
+    number: Number(d.number), title: String(d.title ?? ""), author: d.author?.login ?? d.author?.name ?? "", branch: d.headRefName ?? "",
+    draft: d.isDraft === true, review: REVIEW[d.reviewDecision] ?? null, updated: d.updatedAt ?? "",
+  } : {
+    number: Number(d.iid), title: String(d.title ?? ""), author: d.author?.username ?? d.author?.name ?? "", branch: d.source_branch ?? "",
+    draft: d.draft === true || d.work_in_progress === true || /^\s*(\[draft\]|draft:|\(draft\))/i.test(String(d.title ?? "")),
+    review: null, updated: d.updated_at ?? "",
+  }).filter((r) => Number.isInteger(r.number) && r.number > 0).slice(0, LIST_LIMIT);
+}
+
+// The command that lists the open requests; `mine` narrows to those waiting for the person's review.
+export function listCommand(provider, { mine, path, host }) {
+  const repo = !path ? [] : ["--repo", host === "github.com" || host === "gitlab.com" ? path : `${host}/${path}`];
+  return provider === "github"
+    ? ["gh", ["pr", "list", "--state", "open", "--limit", String(LIST_LIMIT), ...repo, "--json", "number,title,author,isDraft,headRefName,reviewDecision,updatedAt", ...(mine ? ["--search", "review-requested:@me"] : [])]]
+    : ["glab", ["mr", "list", "--per-page", String(LIST_LIMIT), ...repo, "--output", "json", ...(mine ? ["--reviewer=@me"] : [])]];
 }
 
 // ---- running things ----------------------------------------------------------
@@ -164,6 +194,24 @@ export async function repoOf(exec, cwd, on) {
     if (dir.code === 0 && dir.stdout.trim()) return { root: dir.stdout.trim(), bare: true };
   }
   return { error: `${cwd} is not inside a Git repository.` };
+}
+
+// The open requests of the repo around `cwd`: { ok: true, items, provider } or
+// { ok: false, problem } (no gh/glab, not logged in, no access, odd output).
+// Never throws: the number box keeps working whatever happens here.
+export async function listRequests({ exec, cwd, on = null, mine = true }) {
+  if (!cwd) return { ok: false, problem: "No folder is shown." };
+  const found = await repoOf(exec, cwd, on);
+  if (found.error) return { ok: false, problem: found.error };
+  const origin = await run(exec, "git", ["config", "--get", "remote.origin.url"], { cwd: found.root, on });
+  if (origin.code !== 0 || !origin.stdout.trim()) return { ok: false, problem: "This repository has no `origin` remote." };
+  const remote = parseRemote(origin.stdout.trim());
+  const provider = remote ? providerOf(remote.host) : "github";
+  const [cmd, args] = listCommand(provider, { mine, path: remote?.path, host: remote?.host });
+  const r = await run(exec, cmd, args, { cwd: found.root, on, timeout: 30000 });
+  if (r.code !== 0) return { ok: false, problem: cliProblem(cmd, null, r) };
+  try { return { ok: true, items: normalizeList(provider, JSON.parse(r.stdout || "[]")), provider }; }
+  catch { return { ok: false, problem: `\`${cmd}\` returned something unreadable, so the list is empty.` }; }
 }
 
 async function defaultBranch(git) {

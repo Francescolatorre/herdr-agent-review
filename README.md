@@ -54,9 +54,14 @@ in [LICENSE](LICENSE); see [Versions](#versions) for how its releases are counte
   A block comment is an ordinary line comment: it shows under its lines in
   the source view too, and goes into the same review. Files that split into
   more than 500 blocks open as text only.
-- **Pull and merge requests.** `ctrl-shift-o` (`reviewer.pr`) asks for a link
-  or number (`123`, `!45`, `https://github.com/…/pull/123`,
-  `https://gitlab.example.com/…/-/merge_requests/45`). Reviewer fetches the
+- **Pull and merge requests.** `ctrl-shift-o` (`reviewer.pr`) lists the
+  project's open requests (needs `gh` or `glab`, logged in): by default those
+  waiting for your review, or **All open**; the choice is remembered. A click
+  opens one. For any other request, including closed ones, enter a link or
+  number (`123`, `!45`, `https://github.com/…/pull/123`,
+  `https://gitlab.example.com/…/-/merge_requests/45`) in the box; it works
+  without the list too. Drafts are marked, and GitHub's review status shows.
+  Reviewer fetches the
   request's head from `origin` (`pull/N/head` on GitHub,
   `merge-requests/N/head` on GitLab, also for forks) into its own ref and
   checks it out, detached, in a separate worktree at
