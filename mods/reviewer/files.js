@@ -1,17 +1,23 @@
 // Inventory and presentation are separate: a deleted path belongs to the
 // comparison even when it is absent from the selected snapshot.
-export async function gitInventory(read, commit, ignored) {
+export async function gitInventory(read, commit) {
   const args = commit ? ["ls-tree", "-r", "--name-only", "-z", commit]
     : ["ls-files", "--cached", "--others", "--exclude-standard", "-z"];
-  const paths = (await read(args)).split("\0").filter(Boolean);
-  if (!commit && ignored) {
-    const extra = await read(["ls-files", "--others", "--ignored", "--exclude-standard", "-z"]);
-    return paths.concat(extra.split("\0").filter(Boolean));
-  }
-  return paths;
+  return (await read(args)).split("\0").filter(Boolean);
 }
 
-export function buildTree(paths, changes, directories = []) {
+// What Git ignores in the working tree. A wholly ignored folder (node_modules, dist) comes back
+// as one entry, not as its files: listing those takes minutes in a real project. Such a folder
+// is shown but not opened.
+export async function ignoredInventory(read) {
+  const entries = (await read(["ls-files", "--others", "--ignored", "--exclude-standard", "--directory", "-z"])).split("\0").filter(Boolean);
+  return {
+    files: entries.filter((entry) => !entry.endsWith("/")),
+    directories: entries.filter((entry) => entry.endsWith("/")).map((entry) => entry.slice(0, -1)),
+  };
+}
+
+export function buildTree(paths, changes, directories = [], ignored = new Set()) {
   const folders = new Map();
   const root = { path: "", children: [] };
   folders.set("", root);
@@ -28,7 +34,8 @@ export function buildTree(paths, changes, directories = []) {
     return folders.get(path);
   }
   for (const path of directories) folder(path);
-  const files = new Map(paths.map(path => [path, { path }]));
+  for (const path of ignored) if (folders.has(path)) folders.get(path).ignored = true;
+  const files = new Map(paths.map(path => [path, ignored.has(path) ? { path, ignored: true } : { path }]));
   for (const change of changes) files.set(change.path, change);
   for (const file of files.values()) {
     let parent = parentOf(file.path);

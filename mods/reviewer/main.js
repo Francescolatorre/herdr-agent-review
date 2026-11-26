@@ -43,7 +43,7 @@ import { tokenize, languageOf } from "./highlight.js";
 import { ask } from "./ask.js";
 import { palette } from "./palette.js";
 import { Dialog } from "./dialog.js";
-import { buildTree, visibleRows, gitInventory, fileLines } from "./files.js";
+import { buildTree, visibleRows, gitInventory, ignoredInventory, fileLines } from "./files.js";
 import { documentBlocks, isMarkdown, MAX_BLOCKS } from "./markdown.js";
 import { diagram, imageKey } from "./diagram.js";
 import { DiagramViewer } from "./viewer.js";
@@ -245,9 +245,9 @@ export default class Changes extends View {
     if (!this.root || this.plain || this.context !== key()) return;
     if (this.loading || this.busy) { this.queuedBrowser = { ignored, context: this.context }; return; }
     if (ignored) {
-      const prefs = { ...(shared("reviewer.ignored") ?? {}) };
-      prefs[`${this.on ?? ""}:${this.root}`] = !this.ignored;
-      setShared("reviewer.ignored", prefs);
+      const prefs = { ...(shared("reviewer.hideIgnored") ?? {}) };
+      prefs[`${this.on ?? ""}:${this.root}`] = !this.hideIgnored;
+      setShared("reviewer.hideIgnored", prefs);
     } else {
       this.maximized = false;
       this.allFiles = !this.allFiles;
@@ -286,8 +286,9 @@ export default class Changes extends View {
         const count = perFile.get(node.path);
         return h_flex().h(26).pl(8 + 12 * parts.length).pr(8).gap(5).items_center().cursor_pointer()
           .when(!isDir && this.open === node.path, el => el.bg(t.selected))
-          .text_color(node.changed || node.status ? statusColor(node.status) : t.foreground)
+          .text_color(node.changed || node.status ? statusColor(node.status) : node.ignored ? t.dim : t.foreground)
           .child(div().w(14).child(mark)).child(div().truncate().child(name))
+          .when(isDir && node.ignored, el => el.child(div().flex_none().text_size(10).text_color(t.dim).child("ignored · not listed")))
           .when(node.changed, el => el.child("•"))
           .when(!isDir && Boolean(count), el => el.child(div().text_color(t.accent).child(String(count))));
       })).size_full()
@@ -415,16 +416,18 @@ export default class Changes extends View {
           files.push({ path, status: s, fresh, ...stat });
         }
         const showTree = this.plain ? this.workingView : this.allFiles;
-        const ignored = (shared("reviewer.ignored") ?? {})[scopeKey] === true;
+        const hide = (shared("reviewer.hideIgnored") ?? {})[scopeKey] === true;
         const read = async args => {
           const result = await git(args);
           if (result.code !== 0) throw Object.assign(new Error(result.stderr || "Cannot list files"), { code: result.code });
           return result.stdout;
         };
-        const paths = showTree ? await gitInventory(read, scope === "commit" ? sha : null, ignored) : [];
+        const paths = showTree ? await gitInventory(read, scope === "commit" ? sha : null) : [];
+        // Ignored files are listed unless hidden; a wholly ignored folder is one entry (see ignoredInventory).
+        const extra = showTree && scope !== "commit" && !hide ? await ignoredInventory(read) : { files: [], directories: [] };
         if (key() !== context) return;
-        this.plain = false; this.allFiles = showTree; this.ignored = ignored; this.gitNote = null;
-        this.tree = buildTree(paths, showTree ? files : []);
+        this.plain = false; this.allFiles = showTree; this.hideIgnored = hide; this.gitNote = null;
+        this.tree = buildTree(paths.concat(extra.files), showTree ? files : [], extra.directories, new Set([...extra.files, ...extra.directories]));
         this.treeRows = visibleRows(this.tree, this.expanded);
         if (root !== this.root || scope !== this.scope || sha !== this.sha || range.join(" ") !== this.range.join(" ")) { this.setLines([]); }
         const changedSet = root !== this.root || scope !== this.scope || sha !== this.sha;
@@ -1243,7 +1246,8 @@ export default class Changes extends View {
           .when(!this.plain, el => el.child(stats())).child(div().flex_1()).child(actions()))))
       .when(Boolean(this.root), e => e.child(h_flex().flex_none().h(30).px(6).gap(2).items_center()
         .when(!this.plain, el => el.child(link("switch-view", this.allFiles ? "Changes" : "All files", (_e, cx) => this.toggleBrowser(cx))))
-        .when(this.allFiles && !this.plain && this.scope !== "commit", el => el.child(link("ignored-files", (this.ignored ? "☑ " : "☐ ") + ".gitignored-files", (_e, cx) => this.toggleBrowser(cx, true))))
+        .when(this.allFiles && !this.plain && this.scope !== "commit", el => el.child(link("ignored-files", "", (_e, cx) => this.toggleBrowser(cx, true)).tooltip("Leave out the files Git ignores")
+          .child(div().w(14).flex_none().text_color(t.ansi2).child(this.hideIgnored ? "✓" : "")).child("hide gitignored files")))
         .when(Boolean(this.open) && isMarkdown(this.open) && this.doc?.path === this.open, el => el.child(link("doc-toggle", this.documentShown() ? "Source" : "Preview", (_e, cx) => this.toggleDocument(cx)).tooltip(this.documentShown() ? "Show the file as text, with its line numbers" : "Read the file as a document, comment block by block")))
         .when(this.allFiles && Boolean(this.open), el => el.child(link("whole-file", "Comment", (_e, cx) => this.commentFile(this.open, cx))))
         .when(this.canEdit(), el => el.child(link("edit-file", "Open in editor", (_e, cx) => this.editFile(cx))))))
