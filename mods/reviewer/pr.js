@@ -279,6 +279,22 @@ export async function openReview({ exec, cwd, on = null, input }) {
   };
 }
 
+// The panel's first read of a pinned worktree (`args`: git's top-level lookup, with the
+// panel's flags) and whether the worktree is gone: deleted outside Reviewer, or no longer
+// a Git worktree. Never throws; `result` is exec's own result for the caller to go on with.
+export async function probePin({ exec, pin, args = ["rev-parse", "--show-toplevel"] }) {
+  const result = await run(exec, "git", args, { cwd: pin.root, on: pin.on ?? null });
+  return { gone: result.code !== 0 || !result.stdout.trim(), result };
+}
+
+// After a worktree vanished: let the repo forget it and drop the local ref. Best effort,
+// each step on its own, nothing thrown.
+export async function forgetWorktree({ exec, pin }) {
+  const git = (args) => run(exec, "git", args, { cwd: pin.repo, on: pin.on ?? null });
+  await git(["worktree", "prune"]);
+  if (pin.ref) await git(["update-ref", "-d", pin.ref]);
+}
+
 // Takes the worktree and the local ref away. Local changes in the worktree
 // stop it ({ ok: false, dirty: true }) until `force` says to discard them.
 export async function closeReview({ exec, pin, force = false }) {

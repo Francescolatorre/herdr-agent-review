@@ -2,7 +2,7 @@
 //   openOverlay({ mod: "reviewer", kind: "dialog", width, height, props: { prDialog: { cwd, on } } })
 // (main.js hands the copy over to this class when props().prDialog is set).
 // It takes a link or number, opens the request in a worktree (pr.js) and pins the
-// panel to it through shared "reviewer.pr"; while one is open it shows the
+// panel of its space to it (pins.js: shared "reviewer.pr", one request per space); while one is open it shows the
 // request's title, details and description and offers "Close request", which
 // takes the worktree away again. Enter opens, Esc closes the dialog.
 // Above the box it lists the project's open requests (read in the background when
@@ -11,19 +11,28 @@
 // (false = all). Without gh/glab, a login or on any error the list says why and the box still works.
 import { div } from "gpui-kit";
 import { v_flex, h_flex, TextView, InputState, Input } from "gpui-base";
-import { exec, props, closeOverlay, theme, shared, setShared, notify } from "herdr";
+import { exec, props, closeOverlay, theme, shared, setShared, notify, spaces } from "herdr";
 import { log } from "./log.js";
 import { openReview, closeReview, listRequests } from "./pr.js";
+import { createPins } from "./pins.js";
 
-export const PR = "reviewer.pr", SCOPE = "reviewer.scope", FILTER = "reviewer.prFilter";
+export const SCOPE = "reviewer.scope", FILTER = "reviewer.prFilter";
 
-// The open request, if any (and well-formed): the panel reviews its worktree.
-export const pinned = () => { const p = shared(PR); return p && typeof p === "object" && typeof p.root === "string" ? p : null; };
+// The requests open per space (pins.js, shared "reviewer.pr"): a space's panel reviews its
+// request's worktree, other spaces follow their pane as usual.
+export const pins = createPins({
+  get: shared, set: setShared,
+  spaces: () => spaces().map((s) => s.id),
+  active: () => spaces().find((s) => s.active)?.id ?? null,
+});
+// The request open in `space` (default: the active one), or null.
+export const pinned = (space) => pins.pinned(space);
 
 export class PrDialog {
   init(_props, cx) {
     const p = props() ?? {};
     this.spec = p.prDialog ?? {}; this.overlay = p.overlay;
+    this.space = this.spec.space ?? null; // the space it was opened from: its request is the one shown
     this.busy = null; this.error = null; this.discard = false; this.closed = false; this.text = "";
     this.input = InputState.new({ placeholder: "Link or number: 123, !45 or https://…/pull/123" });
     this.input.on("change", (_e, cx) => { this.text = this.input.value(); this.error = null; cx.notify(); });
@@ -38,7 +47,7 @@ export class PrDialog {
   onRemoved() { this.closed = true; }
 
   // Where git runs for opening: the repository the pinned request came from, else the panel's folder.
-  where() { const p = pinned(); return p ? { cwd: p.repo, on: p.on ?? null } : { cwd: this.spec.cwd, on: this.spec.on ?? null }; }
+  where() { const p = pinned(this.space); return p ? { cwd: p.repo, on: p.on ?? null } : { cwd: this.spec.cwd, on: this.spec.on ?? null }; }
 
   // The filter of the list of open requests, remembered: those waiting for my review (the default), or all open.
   mine() { return shared(FILTER) !== false; }
@@ -77,10 +86,11 @@ export class PrDialog {
       if (this.closed) return;
       this.busy = null;
       if (!result.ok) { this.error = result.error; cx.notify(); return; }
-      const { pin } = result, previous = pinned();
+      const { pin } = result, previous = pinned(this.space);
       // A different request than before: leave its worktree in place (it may hold the person's notes);
       // the person closes it explicitly. The panel starts on the whole request, as a pull request page does.
-      setShared(PR, pin);
+      // The request belongs to this space only.
+      pins.set(this.space, pin);
       const scopes = { ...(shared(SCOPE) ?? {}) }; scopes[`${pin.on ?? ""}:${pin.root}`] = "branch"; setShared(SCOPE, scopes);
       if (previous && previous.root !== pin.root) log("pr.switch", previous.path);
       this.input.set_value(""); this.text = "";
@@ -90,7 +100,7 @@ export class PrDialog {
   }
 
   close(cx) {
-    const pin = pinned();
+    const pin = pinned(this.space);
     if (!pin || this.busy || this.closed) return;
     const force = this.discard;
     this.busy = "Removing the worktree…"; this.error = null; cx.notify();
@@ -100,7 +110,7 @@ export class PrDialog {
       catch (e) { log("pr.close", e); result = { ok: false, error: String(e?.message ?? e).slice(0, 300) }; }
       if (this.closed) return;
       this.busy = null;
-      if (result.ok) { this.discard = false; setShared(PR, null); notify({ title: `${pin.label} closed`, body: "The worktree was removed.", level: "info" }); }
+      if (result.ok) { this.discard = false; pins.set(this.space, null); notify({ title: `${pin.label} closed`, body: "The worktree was removed.", level: "info" }); }
       else if (result.dirty) { this.discard = true; this.error = `${result.error} Close again to discard them.`; }
       else this.error = result.error;
       cx.notify();
@@ -108,7 +118,7 @@ export class PrDialog {
   }
 
   render(cx) {
-    const t = theme(), pin = pinned(), info = pin?.info;
+    const t = theme(), pin = pinned(this.space), info = pin?.info;
     const button = (id, text, primary, action, disabled) => h_flex().id(id).h(32).px(14).items_center().rounded(8).border_1()
       .border_color(primary ? t.solid : t.input).bg(primary ? t.solid : t.raised).text_color(primary ? t.solid_foreground : t.foreground).text_size(12.5).font_medium()
       .when(disabled, (e) => e.opacity(0.5)).when(!disabled, (e) => e.cursor_pointer().hover((s) => s.opacity(0.88)).on_click(action)).child(text);

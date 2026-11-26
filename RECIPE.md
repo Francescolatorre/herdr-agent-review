@@ -426,16 +426,27 @@ fill, `foreground` text at 13px. Top to bottom:
   `prdialog.js` is the overlay (`props.prDialog = { cwd, on }`, handed over by
   `main.js` like the send dialog): a link/number input, the open request's
   title, details and description (`TextView.markdown`), notes, Open / Close
-  request. The open request is shared `reviewer.pr` (`pin`: `provider`,
+  request. The open requests are shared `reviewer.pr`, a map space id → `pin`
+  (`pins.js`, `createPins({ get, set, spaces, active })`; `pin`: `provider`,
   `number`, `label`, `repo`, `root`, `on`, `base`, `ref`, `path`, `sha`, `info`,
-  `notes`); while it is set `location()` returns its worktree `root`, so the
-  panel follows it wherever the focus is, `scopes()` uses `pin.base` against
+  `notes`, `space`). A request belongs to the space it was opened in: while the
+  active space has one `location()` returns its worktree `root`, in any other
+  space the panel follows the pane. `pins.set(space, null)` lets go (the header's
+  `×`, `releaseRequest`) and leaves the worktree; the dialog's "Close request"
+  removes worktree and ref. Pins of spaces that no longer exist are dropped on the
+  next write. The first version kept ONE pin (top-level `root`) for every space; it
+  has no owner, is ignored and `dropLegacy()` removes it at start-up. Every refresh of a
+  pinned worktree starts with `probePin` (the usual `rev-parse --show-toplevel`): if
+  it fails or throws, the worktree is gone (deleted outside Reviewer), so
+  `releaseGone` drops the pin, shows one warning toast, refreshes to follow the pane
+  and has `forgetWorktree` run `git worktree prune` and delete the ref in the origin repo
+  (best effort, never throws), instead of a series of "refresh failed". `scopes()` uses `pin.base` against
   `origin/<base>` (and `pin.label` as the branch name), and opening sets the
   worktree's remembered scope (`reviewer.scope`) to `branch`. The way in
   without a key is `prButton` in the panel header, right after the scope
   picker, shown whenever a repo is shown (not in plain-folder mode): "Pull
   request…" ("PR…" under 600 px), or the open request's label ("PR #N" /
-  "MR !N", accent-colored) while one is open; it calls `openPrDialog()`.
+  "MR !N", accent-colored) while one is open, with a `×` that releases it; it calls `openPrDialog()`.
   While a request is open the folder block also shows a `prLine` with its
   title, read-only (the button is the only control). Key command:
   `reviewer.pr` (`ctrl-shift-o`), optional: the installer leaves it out where

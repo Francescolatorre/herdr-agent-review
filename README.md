@@ -78,8 +78,12 @@ in [LICENSE](LICENSE); see [Versions](#versions) for how its releases are counte
   description (author, state, labels, checks); without them the code still
   opens and the dialog says what is missing. GitHub is taken for `github.com`
   and hosts named `github.*`, any other host for GitLab; a link or `!N` names
-  it explicitly. **Close request** removes the worktree and ref (it asks
-  again if the worktree has local changes). Read-only: nothing is pushed,
+  it explicitly. An open request belongs to the Herdr space it was opened in:
+  other spaces follow their pane as usual. The **×** next to **PR #N** stops
+  reviewing it there at once and keeps the worktree (open it again from the
+  list); **Close request** in the dialog removes the worktree and ref (it asks
+  again if the worktree has local changes). If the worktree is deleted outside
+  Reviewer, the request is dropped with a short note. Read-only: nothing is pushed,
   commented or approved on the host.
 - **Folders outside Git** open directly in All files. Expand folders to
   browse them and review files just as you would in a worktree.
