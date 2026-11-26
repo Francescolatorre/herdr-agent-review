@@ -57,6 +57,37 @@ in [LICENSE](LICENSE); see [Versions](#versions) for how its releases are counte
   A block comment is an ordinary line comment: it shows under its lines in
   the source view too, and goes into the same review. Files that split into
   more than 500 blocks open as text only.
+- **Pull and merge requests.** The **Pull request…** button in the header
+  (next to the scope picker; **PR…** in a narrow panel, **PR #N** or **MR !N**
+  while one is open) opens the dialog, so no key is needed. The key
+  `ctrl-shift-o` (`reviewer.pr`) is optional: the installer skips it where
+  you have bound it already. The dialog lists the
+  project's open requests (needs `gh` or `glab`, logged in): by default those
+  waiting for your review, or **All open**; the choice is remembered. A click
+  opens one. For any other request, including closed ones, enter a link or
+  number (`123`, `!45`, `https://github.com/…/pull/123`,
+  `https://gitlab.example.com/…/-/merge_requests/45`) in the box; it works
+  without the list too. Drafts are marked, and GitHub's review status shows.
+  Reviewer fetches the
+  request's head from `origin` (`pull/N/head` on GitHub,
+  `merge-requests/N/head` on GitLab, also for forks) into its own ref and
+  checks it out, detached, in a separate worktree at
+  `<folder above your repo>/.reviewer-worktrees/<repo>/pr-N`. Your own
+  checkout is not touched. The panel then reviews that worktree against the
+  request's target branch, as **vs main** does, with the request's commits
+  in the scope picker. With [`gh`](https://cli.github.com) or
+  [`glab`](https://gitlab.com/gitlab-org/cli) installed and logged in, the
+  header shows the title and a click opens the details and the Markdown
+  description (author, state, labels, checks); without them the code still
+  opens and the dialog says what is missing. GitHub is taken for `github.com`
+  and hosts named `github.*`, any other host for GitLab; a link or `!N` names
+  it explicitly. An open request belongs to the Herdr space it was opened in:
+  other spaces follow their pane as usual. The **×** next to **PR #N** stops
+  reviewing it there at once and keeps the worktree (open it again from the
+  list); **Close request** in the dialog removes the worktree and ref (it asks
+  again if the worktree has local changes). If the worktree is deleted outside
+  Reviewer, the request is dropped with a short note. Read-only: nothing is pushed,
+  commented or approved on the host.
 - **Folders outside Git** open directly in All files. Expand folders to
   browse them and review files just as you would in a worktree.
 - **Open in editor** opens a working copy in a new Herdr terminal on its
@@ -226,6 +257,7 @@ comments and sending reviews. Press **Esc** or **F1** to return to your review.
 | `ctrl-shift-enter` | Submit the shown scope's draft comments |
 | `ctrl-shift-a` | Ask the agent about the whole open diff |
 | `ctrl-shift-s` | Cycle Uncommitted, Last commit and vs main |
+| `ctrl-shift-o` | Open a pull or merge request in a worktree (or read or close the open one) |
 
 `ctrl-shift-r` runs `mod.open:reviewer-toggle`. A key runs one command, and
 Reviewer's own commands only reach it while its block is shown, so the
@@ -244,6 +276,7 @@ Bind these in `keys.json` to change the keys above or add more:
 | `reviewer.ask` | Ask the agent about the whole open diff |
 | `reviewer.clear` | Discard the shown scope's drafts |
 | `reviewer.scope` | Cycle Uncommitted, Last commit and vs main |
+| `reviewer.pr` | Open a pull or merge request in a worktree, or show and close the open one |
 | `reviewer.full` | Show or fold the unchanged lines (*Full file*) |
 | `reviewer.shortcuts` | Show or hide the keyboard shortcut reference |
 | `mod.open:reviewer-toggle` | Show or hide Reviewer (an app command) |

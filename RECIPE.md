@@ -251,7 +251,7 @@ fill, `foreground` text at 13px. Top to bottom:
 - The dialog warns in `blocked` color above 8 KB of context: "This is N
   KB of text pasted into the agent's terminal; some agents are slow or cut
   it short at this size. Consider sending fewer comments at a time."
-- Key commands: `reviewer.submit`, `reviewer.ask`,
+- Key commands: `reviewer.submit`, `reviewer.ask`, `reviewer.pr` (open a pull or merge request),
   `reviewer.shortcuts` (open or close a scrollable guide showing current Herdr
   bindings, also available from the Shortcuts button and F1 when focused),
   `reviewer.clear` (discard drafts), `reviewer.scope` (next
@@ -266,8 +266,8 @@ fill, `foreground` text at 13px. Top to bottom:
   ancestor. Then `closeOverlay(props().overlay)`. Without `props().overlay`
   (as under `herdr-app check`) it does nothing.
 - The repo's `keys.json` binds `ctrl-shift-r` to that, and
-  `ctrl-shift-enter`, `ctrl-shift-a` and `ctrl-shift-s` to `reviewer.submit`,
-  `reviewer.ask` and `reviewer.scope`. `scripts/install.sh` merges it into
+  `ctrl-shift-enter`, `ctrl-shift-a`, `ctrl-shift-s` and `ctrl-shift-o` to `reviewer.submit`,
+  `reviewer.ask`, `reviewer.scope` and `reviewer.pr`. `scripts/install.sh` merges it into
   the person's `keys.json` only where a key is unbound, never creates that
   file, and names each key it left alone. `scripts/uninstall.sh` reverses it:
   it removes every binding whose action is `reviewer.*` or
@@ -402,6 +402,70 @@ fill, `foreground` text at 13px. Top to bottom:
   "Reviewer <v> is available", the release URL in the body). A failed look is
   silent and counts as a look; the function never rejects. `main.js` calls it
   once from `init`. The numeric comparison is `newer(a, b)`.
+- `pr.js`: reviewing a whole pull (GitHub) or merge (GitLab) request, plain
+  logic around an injected `exec` (the tests stub it). `parseTarget(input)`
+  takes a link, `12`, `#12` or `!12`; `resolveTarget(input, originUrl)` checks
+  a link against `origin`'s `host/path`, fills the provider of a bare number
+  (`providerOf(host)`: `github.com` and `github.*` are GitHub, any other
+  host GitLab; `!N` forces GitLab) and refuses a link to another project.
+  `refFor` gives `pull/N/head` → `refs/reviewer/pr/N` or
+  `merge-requests/N/head` → `refs/reviewer/mr/N`. `openReview({ exec, cwd,
+  on, input })`: find the repo (toplevel, or a bare repo's own folder), read
+  the description (`gh pr view N --repo … --json title,body,author,labels,
+  baseRefName,headRefName,state,url,statusCheckRollup` or `glab mr view N
+  --repo … --output json`, normalised by `normalizeInfo`; failure is not
+  fatal, `cliProblem` words it: not installed, not logged in, not found),
+  fetch the head into the local ref and the target branch into
+  `refs/remotes/origin/<base>` (the base is origin's default branch when gh/glab
+  could not say), then `git worktree add --detach` at
+  `worktreePath` = `<parent of repo>/.reviewer-worktrees/<repo>/pr-N`, or, if
+  that worktree exists, `checkout --detach` to the new head (left alone when
+  it has local changes). Returns `{ ok, pin }` or `{ ok: false, error }`.
+  `closeReview({ exec, pin, force })` removes the worktree and ref; local changes stop it
+  (`dirty: true`) until `force`. Nothing writes to the host.
+  `prdialog.js` is the overlay (`props.prDialog = { cwd, on }`, handed over by
+  `main.js` like the send dialog): a link/number input, the open request's
+  title, details and description (`TextView.markdown`), notes, Open / Close
+  request. The open requests are shared `reviewer.pr`, a map space id → `pin`
+  (`pins.js`, `createPins({ get, set, spaces, active })`; `pin`: `provider`,
+  `number`, `label`, `repo`, `root`, `on`, `base`, `ref`, `path`, `sha`, `info`,
+  `notes`, `space`). A request belongs to the space it was opened in: while the
+  active space has one `location()` returns its worktree `root`, in any other
+  space the panel follows the pane. `pins.set(space, null)` lets go (the header's
+  `×`, `releaseRequest`) and leaves the worktree; the dialog's "Close request"
+  removes worktree and ref. Pins of spaces that no longer exist are dropped on the
+  next write. The first version kept ONE pin (top-level `root`) for every space; it
+  has no owner, is ignored and `dropLegacy()` removes it at start-up. Every refresh of a
+  pinned worktree starts with `probePin` (the usual `rev-parse --show-toplevel`): if
+  it fails or throws, the worktree is gone (deleted outside Reviewer), so
+  `releaseGone` drops the pin, shows one warning toast, refreshes to follow the pane
+  and has `forgetWorktree` run `git worktree prune` and delete the ref in the origin repo
+  (best effort, never throws), instead of a series of "refresh failed". `scopes()` uses `pin.base` against
+  `origin/<base>` (and `pin.label` as the branch name), and opening sets the
+  worktree's remembered scope (`reviewer.scope`) to `branch`. The way in
+  without a key is `prButton` in the panel header, right after the scope
+  picker, shown whenever a repo is shown (not in plain-folder mode): "Pull
+  request…" ("PR…" under 600 px), or the open request's label ("PR #N" /
+  "MR !N", accent-colored) while one is open, with a `×` that releases it; it calls `openPrDialog()`.
+  While a request is open the folder block also shows a `prLine` with its
+  title, read-only (the button is the only control). Key command:
+  `reviewer.pr` (`ctrl-shift-o`), optional: the installer leaves it out where
+  the key is taken.
+  The dialog also lists the open requests, read when it opens:
+  `listRequests({ exec, cwd, on, mine })` finds the repo and origin as above and runs
+  `gh pr list --state open --limit 50 [--repo …] --json number,title,author,isDraft,
+  headRefName,reviewDecision,updatedAt [--search review-requested:@me]` or `glab mr
+  list --per-page 50 [--repo …] --output json [--reviewer=@me]` (`listCommand`; 30 s
+  timeout, cwd and `on` as for everything else), and `normalizeList` makes rows
+  `{ number, title, author, branch, draft, review, updated }` (a GitLab draft is
+  `draft`, `work_in_progress` or a `Draft:` title; GitLab's list has no review
+  status). Result: `{ ok: true, items }` (an empty list is not an error) or
+  `{ ok: false, problem }`, worded by `cliProblem(cmd, null, …)`: not installed,
+  not logged in, project not found, anything else's first line, unreadable output.
+  The dialog shows "Loading…" while it runs and never blocks on it; a slower answer
+  to an earlier filter is dropped. A row click calls the same `open` as the number
+  box. The filter ("Review requested from me", default, or "All open") is shared
+  `reviewer.prFilter` (`false` = all open).
 - `ask.js`: `pickAgent(space)`, `ask({ title, context, sent, folder })` →
   opens this mod as a modal dialog overlay with props `{ dialog: true,
   title, context, sent, space, folder }` (the focused pane's space and
